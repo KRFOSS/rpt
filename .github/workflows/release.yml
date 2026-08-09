@@ -32,6 +32,14 @@ jobs:
             rpmarch: aarch64
             archarch: aarch64
     steps:
+      # 셀프호스티드 러너는 서비스로 뜨면서 HOME이 비어 있는 경우가 있다.
+      # 그러면 setup-go가 Go 캐시 위치를 정하지 못하고 실패하므로 미리 채워 준다.
+      - name: 러너 환경 보정
+        run: |
+          mkdir -p "${RUNNER_TEMP}/home" "${RUNNER_TEMP}/go-build" "${RUNNER_TEMP}/go-mod"
+          echo "HOME=${RUNNER_TEMP}/home" >> "${GITHUB_ENV}"
+          echo "GOCACHE=${RUNNER_TEMP}/go-build" >> "${GITHUB_ENV}"
+          echo "GOMODCACHE=${RUNNER_TEMP}/go-mod" >> "${GITHUB_ENV}"
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
