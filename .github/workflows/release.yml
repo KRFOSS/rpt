@@ -39,10 +39,26 @@ jobs:
       - name: DEB, RPM, Arch 패키지 생성
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          COMMON="-s dir -n ${PACKAGE_NAME} -v ${VERSION} --iteration 1 --license MIT --url ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
-          fpm ${COMMON} -t deb -a ${{ matrix.debarch }} -p "release/${PACKAGE_NAME}_${VERSION}-1_${{ matrix.debarch }}.deb" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
-          fpm ${COMMON} -t rpm -a ${{ matrix.rpmarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1.${{ matrix.rpmarch }}.rpm" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
-          fpm ${COMMON} -t pacman -a ${{ matrix.archarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1-${{ matrix.archarch }}.pkg.tar.zst" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          # 첫 줄이 요약, 나머지가 상세 설명이 된다.
+          DESCRIPTION=$(printf '%s\n' \
+            "ROKFOSS 패키지 관리자" \
+            "apt와 dpkg가 없는 시놀로지 DSM 등에서 ROKFOSS 저장소의 데비안" \
+            "패키지를 설치하고 관리하는 도구입니다. 시스템 패키지 관리자의" \
+            "목록과 상태를 건드리지 않고 자체 루트에서만 동작합니다.")
+          # 관리자와 설명에 공백이 들어가므로 배열로 넘겨야 단어 분리로 깨지지 않는다.
+          COMMON=(
+            -s dir
+            -n "${PACKAGE_NAME}"
+            -v "${VERSION}"
+            --iteration 1
+            --license MIT
+            --url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+            --maintainer "ROKFOSS PROJECT <krfoss@krfoss.org>"
+            --description "${DESCRIPTION}"
+          )
+          fpm "${COMMON[@]}" -t deb -a ${{ matrix.debarch }} -p "release/${PACKAGE_NAME}_${VERSION}-1_${{ matrix.debarch }}.deb" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          fpm "${COMMON[@]}" -t rpm -a ${{ matrix.rpmarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1.${{ matrix.rpmarch }}.rpm" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          fpm "${COMMON[@]}" -t pacman -a ${{ matrix.archarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1-${{ matrix.archarch }}.pkg.tar.zst" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
       - uses: actions/upload-artifact@v4
         with:
           name: packages-${{ matrix.goarch }}

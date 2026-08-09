@@ -95,3 +95,17 @@ scp rpt root@nas:/usr/local/bin/rpt
   같은 것은 DSM 에 이미 들어 있어 rpt 가 따로 설치하지 않습니다.
 - **설정 파일은 덮어쓰지 않습니다.** 재설치나 업그레이드에서 사용자가 고친
   `conffiles` 는 그대로 둡니다. 지우려면 `purge` 를 쓰십시오.
+
+## 릴리스
+
+`v` 로 시작하는 태그를 밀면 GitHub Actions 가 amd64 와 arm64 용 정적
+바이너리를 빌드해 deb, rpm, pacman 패키지를 만들고 체크섬과 함께 릴리스에
+올립니다.
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+## 라이선스
+
+MIT. 자세한 내용은 [LICENSE](LICENSE) 를 보십시오.
