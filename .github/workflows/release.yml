@@ -1,0 +1,66 @@
+name: Linux 패키지 릴리스
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  PACKAGE_NAME: rpt
+  BINARY_NAME: rpt
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            debarch: amd64
+            rpmarch: x86_64
+            archarch: x86_64
+          - goarch: arm64
+            debarch: arm64
+            rpmarch: aarch64
+            archarch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: 패키징 도구 설치
+        run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd && sudo gem install fpm
+      - name: 실행 파일 빌드
+        run: |
+          mkdir -p build release
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath -o build/${BINARY_NAME} .
+      - name: DEB, RPM, Arch 패키지 생성
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMON="-s dir -n ${PACKAGE_NAME} -v ${VERSION} --iteration 1 --license MIT --url ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          fpm ${COMMON} -t deb -a ${{ matrix.debarch }} -p "release/${PACKAGE_NAME}_${VERSION}-1_${{ matrix.debarch }}.deb" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          fpm ${COMMON} -t rpm -a ${{ matrix.rpmarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1.${{ matrix.rpmarch }}.rpm" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          fpm ${COMMON} -t pacman -a ${{ matrix.archarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1-${{ matrix.archarch }}.pkg.tar.zst" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.goarch }}
+          path: release/*
+
+  release:
+    needs: package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: release
+          merge-multiple: true
+      - name: 체크섬 및 GitHub 릴리스 생성
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd release
+          sha256sum * > checksums.txt
+          gh release create "${GITHUB_REF_NAME}" * --repo "${GITHUB_REPOSITORY}" --generate-notes

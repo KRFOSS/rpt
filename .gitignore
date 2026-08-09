@@ -1,6 +1,8 @@
 # 빌드 산출물
 /rpt
 /dist/
+/build/
+/release/
 
 # 편집기
 .idea/
