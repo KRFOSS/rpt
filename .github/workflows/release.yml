@@ -19,7 +19,7 @@ env:
 
 jobs:
   package:
-    runs-on: ubuntu-24.04
+    runs-on: superxeon
     strategy:
       matrix:
         include:
@@ -85,7 +85,7 @@ jobs:
     needs: package
     # 수동 실행은 산출물만 만들고 릴리스는 건드리지 않는다.
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
+    runs-on: superxeon
     steps:
       - uses: actions/download-artifact@v4
         with:
