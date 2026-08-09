@@ -37,7 +37,8 @@ jobs:
         with:
           go-version-file: go.mod
       - name: 패키징 도구 설치
-        run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd && sudo gem install fpm
+        # libarchive-tools 는 fpm 의 pacman 타깃이 쓰는 bsdtar 를 제공한다.
+        run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd libarchive-tools && sudo gem install fpm
       - name: 실행 파일 빌드
         run: |
           mkdir -p build release
