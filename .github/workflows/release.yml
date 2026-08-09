@@ -19,7 +19,7 @@ env:
 
 jobs:
   package:
-    runs-on: superxeon
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -32,38 +32,13 @@ jobs:
             rpmarch: aarch64
             archarch: aarch64
     steps:
-      # 셀프호스티드 러너는 서비스로 뜨면서 HOME이 비어 있는 경우가 있다.
-      # 그러면 setup-go가 Go 캐시 위치를 정하지 못하고 실패하므로 미리 채워 준다.
-      - name: 러너 환경 보정
-        run: |
-          mkdir -p "${RUNNER_TEMP}/home" "${RUNNER_TEMP}/go-build" "${RUNNER_TEMP}/go-mod"
-          echo "HOME=${RUNNER_TEMP}/home" >> "${GITHUB_ENV}"
-          echo "GOCACHE=${RUNNER_TEMP}/go-build" >> "${GITHUB_ENV}"
-          echo "GOMODCACHE=${RUNNER_TEMP}/go-mod" >> "${GITHUB_ENV}"
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: 패키징 도구 설치
         # libarchive-tools 는 fpm 의 pacman 타깃이 쓰는 bsdtar 를 제공한다.
-        #
-        # 셀프호스티드 러너가 한 호스트에 여러 대 떠 있으면 매트릭스 잡이
-        # 동시에 apt 를 잡으려다 충돌한다. flock 으로 직렬화하고, 이미 깔려
-        # 있으면 건너뛰어 호스트를 매번 건드리지 않는다.
-        run: |
-          exec 9>/tmp/rpt-pkgtools.lock
-          flock 9
-          if command -v fpm >/dev/null 2>&1 \
-            && command -v rpmbuild >/dev/null 2>&1 \
-            && command -v bsdtar >/dev/null 2>&1 \
-            && command -v zstd >/dev/null 2>&1; then
-            echo "패키징 도구가 이미 설치되어 있습니다. 건너뜁니다."
-          else
-            sudo apt-get update
-            sudo apt-get install -y ruby-dev rpm zstd libarchive-tools
-            sudo gem install fpm
-          fi
-          flock -u 9
+        run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd libarchive-tools && sudo gem install fpm
       - name: 실행 파일 빌드
         run: |
           mkdir -p build release
@@ -110,7 +85,7 @@ jobs:
     needs: package
     # 수동 실행은 산출물만 만들고 릴리스는 건드리지 않는다.
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: superxeon
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:
