@@ -46,7 +46,24 @@ jobs:
           go-version-file: go.mod
       - name: 패키징 도구 설치
         # libarchive-tools 는 fpm 의 pacman 타깃이 쓰는 bsdtar 를 제공한다.
-        run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd libarchive-tools && sudo gem install fpm
+        #
+        # 셀프호스티드 러너가 한 호스트에 여러 대 떠 있으면 매트릭스 잡이
+        # 동시에 apt 를 잡으려다 충돌한다. flock 으로 직렬화하고, 이미 깔려
+        # 있으면 건너뛰어 호스트를 매번 건드리지 않는다.
+        run: |
+          exec 9>/tmp/rpt-pkgtools.lock
+          flock 9
+          if command -v fpm >/dev/null 2>&1 \
+            && command -v rpmbuild >/dev/null 2>&1 \
+            && command -v bsdtar >/dev/null 2>&1 \
+            && command -v zstd >/dev/null 2>&1; then
+            echo "패키징 도구가 이미 설치되어 있습니다. 건너뜁니다."
+          else
+            sudo apt-get update
+            sudo apt-get install -y ruby-dev rpm zstd libarchive-tools
+            sudo gem install fpm
+          fi
+          flock -u 9
       - name: 실행 파일 빌드
         run: |
           mkdir -p build release
