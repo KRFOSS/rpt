@@ -3,6 +3,12 @@ name: Linux 패키지 릴리스
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "패키지 버전 (비우면 0.0.0.dev<커밋해시>로 붙습니다)"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -37,8 +43,18 @@ jobs:
           mkdir -p build release
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath -o build/${BINARY_NAME} .
       - name: DEB, RPM, Arch 패키지 생성
+        env:
+          # 입력값을 셸에 직접 펼치면 명령 주입이 되므로 환경 변수로 받는다.
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_VERSION#v}"
+            # rpm과 pacman은 버전에 하이픈을 못 쓰므로 점으로만 이어 붙인다.
+            [ -n "${VERSION}" ] || VERSION="0.0.0.dev$(echo "${GITHUB_SHA}" | cut -c1-7)"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "패키지 버전: ${VERSION}"
           # 첫 줄이 요약, 나머지가 상세 설명이 된다.
           DESCRIPTION=$(printf '%s\n' \
             "ROKFOSS 패키지 관리자" \
@@ -66,6 +82,8 @@ jobs:
 
   release:
     needs: package
+    # 수동 실행은 산출물만 만들고 릴리스는 건드리지 않는다.
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
