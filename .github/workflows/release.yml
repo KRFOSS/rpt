@@ -117,11 +117,8 @@ jobs:
           fi
           echo "릴리스 태그: ${TAG}"
 
-          # 자동 생성 노트는 PR 작성자만 표시하므로 공동 작업자를 덧붙인다.
-          NOTES=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="${TAG}" -f target_commitish="${GITHUB_SHA}" --jq .body)
-          NOTES="${NOTES}"$'\n\n공동 작업: @xenix4845'
-
           cd release
           sha256sum * > checksums.txt
-          gh release create "${TAG}" * "${ARGS[@]}" --notes "${NOTES}"
+          # gh 는 대화형이 아닐 때 노트 옵션을 반드시 요구하므로, 본문을 비우려면
+          # 빈 --notes 를 넘겨야 한다. 이 옵션을 빼면 릴리스 생성이 실패한다.
+          gh release create "${TAG}" * "${ARGS[@]}" --notes ""
