@@ -69,8 +69,25 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o rpt .
 | `rpt clean` | 내려받아 둔 deb 를 모두 지웁니다 |
 | `rpt autoclean` | 저장소에서 사라진 옛 deb 만 지웁니다 |
 | `rpt relink` | 시스템 심링크를 다시 만듭니다 |
+| `rpt completion <셸>` | bash, zsh 자동완성 스크립트를 출력합니다 |
 
-`-y` 는 확인 질문을 건너뜁니다. 명령과 옵션 이름은 apt 와 같게 맞췄습니다.
+`-y` 는 확인 질문을 건너뜁니다. 명령과 옵션 이름은 apt 와 같게 맞췄고,
+`rpt update` 의 출력도 apt 와 같은 형식입니다.
+
+## 자동완성
+
+deb, rpm, pacman 패키지로 설치하면 bash 와 zsh 자동완성이 함께 깔립니다.
+새 셸을 열면 명령과 옵션은 물론 패키지 이름까지 탭으로 완성됩니다.
+`install` 은 저장소의 패키지를, `remove` 는 설치된 패키지를 채웁니다.
+이름은 그때그때 `rpt list` 를 불러 얻으므로 저장소가 바뀌어도 다시 깔
+필요가 없습니다.
+
+소스에서 빌드했다면 직접 넣으십시오.
+
+```sh
+rpt completion bash | sudo tee /usr/share/bash-completion/completions/rpt >/dev/null
+rpt completion zsh  | sudo tee /usr/share/zsh/site-functions/_rpt >/dev/null
+```
 
 ## 환경 변수
 

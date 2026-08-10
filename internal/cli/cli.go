@@ -56,6 +56,13 @@ func Run(args []string) int {
 	case "version", "--version", "-V":
 		ui.Out("rpt %s (ROKFOSS 패키지 관리자, %s)", config.Version, config.DebArch())
 		return 0
+	case "completion":
+		// 설정을 읽지 않아도 되도록 여기서 바로 처리합니다.
+		if err := cmdCompletion(rest); err != nil {
+			ui.Error("%v", err)
+			return 1
+		}
+		return 0
 	}
 
 	cfg, err := config.Load()
@@ -209,6 +216,7 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 	clean               내려받아 둔 deb 파일을 모두 지웁니다
 	autoclean           저장소에서 사라진 옛 deb 파일만 지웁니다
 	relink              시스템 심링크를 다시 만듭니다
+	completion <셸>     셸 자동완성 스크립트를 출력합니다 (bash, zsh)
 	version             rpt 버전을 봅니다
 
 옵션:

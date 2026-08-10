@@ -86,6 +86,17 @@ type Client struct {
 	// 기다리는 동안 멈춘 것처럼 보이지 않도록 알리는 용도이며,
 	// 설정하지 않아도 동작에는 영향이 없습니다.
 	OnRetry func(attempt, total int, wait time.Duration)
+
+	// OnFetch는 메타데이터 파일을 하나 받을 때마다 호출됩니다.
+	// label은 "stable InRelease" 처럼 저장소 안에서의 위치를 가리킵니다.
+	OnFetch func(label string, bytes int64)
+}
+
+// reportFetch는 받은 파일을 알립니다.
+func (c *Client) reportFetch(label string, bytes int64) {
+	if c.OnFetch != nil {
+		c.OnFetch(label, bytes)
+	}
 }
 
 // NewClient는 저장소 클라이언트를 만듭니다.
@@ -148,6 +159,7 @@ func (c *Client) updateOnce() (*Index, error) {
 	if err != nil {
 		return nil, fmt.Errorf("InRelease를 받지 못했습니다: %w", err)
 	}
+	c.reportFetch(c.cfg.Dist+" InRelease", int64(len(inRelease)))
 
 	body, signer, err := verifyInRelease(inRelease)
 	if err != nil {
@@ -182,6 +194,7 @@ func (c *Client) updateOnce() (*Index, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s를 받지 못했습니다: %w", target, err)
 	}
+	c.reportFetch(fmt.Sprintf("%s/%s %s Packages", c.cfg.Dist, c.cfg.Component, c.cfg.Arch), int64(len(raw)))
 	if err := verifySHA256(raw, hashes[target].hash); err != nil {
 		// Release는 서명으로 확인했으므로 어긋난 쪽은 목록이다.
 		// 저장소가 색인을 다시 만드는 중일 때 흔히 일어난다.
