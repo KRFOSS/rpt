@@ -51,6 +51,14 @@ sudo pacman -U rpt-1.0.2-1-x86_64.pkg.tar.zst      # Arch 계열
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o rpt .
 ```
 
+이렇게 빌드하면 `rpt version` 이 `dev` 라고 답합니다. 버전은 릴리스 빌드에서
+링커가 넣습니다. 직접 넣으려면 `-X` 를 더하십시오.
+
+```sh
+CGO_ENABLED=0 go build -trimpath \
+  -ldflags="-s -w -X github.com/krfoss/rpt/internal/config.Version=1.2.3" -o rpt .
+```
+
 시놀로지는 dpkg 가 없어 절차가 다릅니다. [시놀로지 DSM](#시놀로지-dsm) 을 보십시오.
 
 ## 명령

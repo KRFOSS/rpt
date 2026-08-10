@@ -394,7 +394,7 @@ func (c *Client) newRequest(rawURL string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", config.UserAgent)
+	req.Header.Set("User-Agent", config.UserAgent())
 	return req, nil
 }
 
