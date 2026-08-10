@@ -39,9 +39,9 @@ rpt 가 지우므로 실수로 시스템 파일을 건드릴 일이 없습니다
 설치합니다. amd64 와 arm64 를 모두 제공합니다.
 
 ```sh
-sudo dpkg -i rpt_1.0.0-1_amd64.deb                 # Debian 계열
-sudo rpm -i rpt-1.0.0-1.x86_64.rpm                 # RPM 계열
-sudo pacman -U rpt-1.0.0-1-x86_64.pkg.tar.zst      # Arch 계열
+sudo dpkg -i rpt_1.0.1-1_amd64.deb                 # Debian 계열
+sudo rpm -i rpt-1.0.1-1.x86_64.rpm                 # RPM 계열
+sudo pacman -U rpt-1.0.1-1-x86_64.pkg.tar.zst      # Arch 계열
 ```
 
 소스에서 직접 빌드하려면 Go 1.25 이상이 필요합니다. 외부 라이브러리를
@@ -134,7 +134,7 @@ dpkg 가 없어 rpt 자신은 처음 한 번만 손으로 올려야 합니다. d
 
 ```sh
 # dpkg 가 있는 리눅스에서
-dpkg-deb -x rpt_1.0.0-1_amd64.deb out
+dpkg-deb -x rpt_1.0.1-1_amd64.deb out
 scp out/usr/bin/rpt root@nas:/tmp/rpt
 
 # 시놀로지에서
@@ -164,7 +164,7 @@ rm /tmp/rpt
 올립니다.
 
 ```sh
-git tag v1.0.1 && git push origin v1.0.1
+git tag v1.0.2 && git push origin v1.0.2
 ```
 
 ## 라이선스
