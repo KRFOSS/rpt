@@ -30,6 +30,8 @@ const (
 	DefaultBinDir = "/usr/local/bin"
 	// DefaultEtcDir은 설정 디렉터리 심링크를 걸 시스템 경로입니다.
 	DefaultEtcDir = "/etc"
+	// DefaultWebAddr는 로컬 웹 대시보드의 기본 바인드 주소입니다.
+	DefaultWebAddr = "127.0.0.1:47981"
 )
 
 // Version은 rpt 자체 버전입니다.
@@ -67,6 +69,8 @@ type Config struct {
 	BinDir string
 	// EtcDir은 설정 디렉터리 심링크를 만들 시스템 디렉터리입니다.
 	EtcDir string
+	// WebAddr은 로컬 웹 대시보드가 바인드할 주소입니다.
+	WebAddr string
 }
 
 // Load는 환경 변수와 실행 환경을 반영한 설정을 만듭니다.
@@ -114,6 +118,10 @@ func Load() (*Config, error) {
 	if etcDir == "" {
 		etcDir = DefaultEtcDir
 	}
+	webAddr := os.Getenv("RPT_WEB_ADDR")
+	if webAddr == "" {
+		webAddr = DefaultWebAddr
+	}
 
 	return &Config{
 		Root:      filepath.Clean(root),
@@ -125,6 +133,7 @@ func Load() (*Config, error) {
 		Arch:      DebArch(),
 		BinDir:    binDir,
 		EtcDir:    etcDir,
+		WebAddr:   webAddr,
 	}, nil
 }
 

@@ -78,6 +78,7 @@ CGO_ENABLED=0 go build -trimpath \
 | `rpt autoclean` | 저장소에서 사라진 옛 deb 만 지웁니다 |
 | `rpt relink` | 시스템 심링크를 다시 만듭니다 |
 | `rpt completion <셸>` | bash, zsh 자동완성 스크립트를 출력합니다 |
+| `rpt web` | 로컬 웹 대시보드를 엽니다 (`127.0.0.1:47981`) |
 
 `-y` 는 확인 질문을 건너뜁니다. 명령과 옵션 이름은 apt 와 같게 맞췄고,
 `rpt update` 의 출력도 apt 와 같은 형식입니다.
@@ -107,6 +108,7 @@ rpt completion zsh  | sudo tee /usr/share/zsh/site-functions/_rpt >/dev/null
 | `RPT_REPO` | `https://pkg.krfoss.org/debian` | 저장소 주소 |
 | `RPT_BINDIR` | `/usr/local/bin` | 실행 파일 심링크 위치 |
 | `RPT_ETCDIR` | `/etc` | 설정 디렉터리 심링크 위치 |
+| `RPT_WEB_ADDR` | `127.0.0.1:47981` | 로컬 웹 대시보드 주소 |
 
 시놀로지 환경에서는 `/volumeN/@rokfoss` 를 우선 사용하고, 일반 Linux에서는
 기본적으로 `/opt/rpt` 와 `/var/lib/rpt`, `/var/cache/rpt` 를 사용합니다.
@@ -130,6 +132,12 @@ rpt completion zsh  | sudo tee /usr/share/zsh/site-functions/_rpt >/dev/null
 /usr/local/bin/krfs-rport  ->  /opt/rpt/usr/bin/krfs-rport
 /etc/krfs-rport            ->  /opt/rpt/etc/krfs-rport
 ```
+
+## 웹 지원
+
+`rpt web` 를 실행하면 `127.0.0.1:47981` 에서 웹 대시보드를 엽니다.
+브라우저에서 `update`, `install`, `remove`, `purge`, `upgrade`, `autoremove`, `list`, `search`, `show`, `clean`, `autoclean`, `relink`, `version`, `help` 를 모두 실행할 수 있습니다.
+상태 경로, 캐시 경로, 저장소 메타데이터, 설치된 패키지 목록도 함께 볼 수 있습니다.
 
 심링크를 걸 자리에 이미 다른 파일이 있으면 그대로 두고 경고만 합니다.
 제거할 때도 rpt 가 만든 심링크인지 확인한 뒤에만 걷어냅니다.

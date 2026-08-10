@@ -30,6 +30,8 @@ type options struct {
 	Upgradable bool
 	// Root는 설치 루트를 덮어씁니다.
 	Root string
+	// Addr는 웹 대시보드 바인드 주소를 덮어씁니다.
+	Addr string
 }
 
 // Run은 명령행 인자를 처리하고 종료 코드를 돌려줍니다.
@@ -47,6 +49,9 @@ func Run(args []string) int {
 	}
 	if opts.Root != "" {
 		os.Setenv("RPT_ROOT", opts.Root)
+	}
+	if opts.Addr != "" {
+		os.Setenv("RPT_WEB_ADDR", opts.Addr)
 	}
 
 	switch cmd {
@@ -118,6 +123,8 @@ func dispatch(m *pkgmgr.Manager, cmd string, args []string, opts options) error 
 		return cmdClean(m, true)
 	case "relink":
 		return cmdRelink(m)
+	case "web":
+		return cmdWeb(m, opts)
 	default:
 		return fmt.Errorf("알 수 없는 명령입니다: %s (rpt help 로 사용법을 확인하십시오)", cmd)
 	}
@@ -147,9 +154,19 @@ func parseArgs(args []string) ([]string, options, error) {
 			}
 			i++
 			opts.Root = args[i]
+		case "--addr":
+			if i+1 >= len(args) {
+				return nil, opts, fmt.Errorf("--addr 뒤에 주소가 필요합니다")
+			}
+			i++
+			opts.Addr = args[i]
 		default:
 			if strings.HasPrefix(a, "--root=") {
 				opts.Root = strings.TrimPrefix(a, "--root=")
+				continue
+			}
+			if strings.HasPrefix(a, "--addr=") {
+				opts.Addr = strings.TrimPrefix(a, "--addr=")
 				continue
 			}
 			if strings.HasPrefix(a, "-") {
@@ -217,6 +234,7 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 	autoclean           저장소에서 사라진 옛 deb 파일만 지웁니다
 	relink              시스템 심링크를 다시 만듭니다
 	completion <셸>     셸 자동완성 스크립트를 출력합니다 (bash, zsh)
+	web                 로컬 웹 대시보드를 엽니다
 	version             rpt 버전을 봅니다
 
 옵션:
@@ -225,6 +243,7 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 			--installed     list 에서 설치된 것만 봅니다
 			--upgradable    list 에서 올릴 수 있는 것만 봅니다
 			--root <경로>   설치 루트를 지정합니다 (기본: /opt/rpt, Synology 는 /volumeN/@rokfoss)
+			--addr <주소>   web 명령의 바인드 주소를 지정합니다 (기본: %s)
 
 환경 변수:
 	RPT_ROOT            설치 루트
@@ -233,6 +252,7 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 	RPT_REPO            저장소 주소 (기본: %s)
 	RPT_BINDIR          실행 파일 심링크 위치 (기본: %s)
 	RPT_ETCDIR          설정 디렉터리 심링크 위치 (기본: %s)
+	RPT_WEB_ADDR        웹 대시보드 주소 (기본: %s)
 
 예시:
 	rpt update
@@ -240,5 +260,5 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 	rpt list --installed
 	rpt remove krfs-rport
 	rpt clean
-`, config.Version, config.DefaultStateDir, config.DefaultCacheDir, config.DefaultRepoURL, config.DefaultBinDir, config.DefaultEtcDir)
+	`, config.Version, config.DefaultWebAddr, config.DefaultStateDir, config.DefaultCacheDir, config.DefaultRepoURL, config.DefaultBinDir, config.DefaultEtcDir, config.DefaultWebAddr)
 }
