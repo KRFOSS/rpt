@@ -39,14 +39,7 @@ jobs:
       - name: 패키징 도구 설치
         # libarchive-tools 는 fpm 의 pacman 타깃이 쓰는 bsdtar 를 제공한다.
         run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd libarchive-tools && sudo gem install fpm
-      - name: 실행 파일 빌드
-        run: |
-          mkdir -p build release completions
-          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath -o build/${BINARY_NAME} .
-          # 자동완성 스크립트는 아키텍처와 무관하므로 러너에서 바로 만든다.
-          go run . completion bash > completions/${BINARY_NAME}
-          go run . completion zsh > completions/_${BINARY_NAME}
-      - name: DEB, RPM, Arch 패키지 생성
+      - name: 버전 결정
         env:
           # 입력값을 셸에 직접 펼치면 명령 주입이 되므로 환경 변수로 받는다.
           INPUT_VERSION: ${{ inputs.version }}
@@ -58,7 +51,20 @@ jobs:
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
           echo "패키지 버전: ${VERSION}"
+      - name: 실행 파일 빌드
+        run: |
+          mkdir -p build release completions
+          # 패키지 버전과 rpt version 이 어긋나지 않도록 링커로 같은 값을 넣는다.
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath \
+            -ldflags "-s -w -X github.com/krfoss/rpt/internal/config.Version=${VERSION}" \
+            -o build/${BINARY_NAME} .
+          # 자동완성 스크립트는 아키텍처와 무관하므로 러너에서 바로 만든다.
+          go run . completion bash > completions/${BINARY_NAME}
+          go run . completion zsh > completions/_${BINARY_NAME}
+      - name: DEB, RPM, Arch 패키지 생성
+        run: |
           # 첫 줄이 요약, 나머지가 상세 설명이 된다.
           DESCRIPTION=$(printf '%s\n' \
             "ROKFOSS 패키지 관리자" \

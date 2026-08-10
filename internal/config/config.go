@@ -30,11 +30,21 @@ const (
 	DefaultBinDir = "/usr/local/bin"
 	// DefaultEtcDir은 설정 디렉터리 심링크를 걸 시스템 경로입니다.
 	DefaultEtcDir = "/etc"
-	// UserAgent는 저장소 요청에 사용할 식별자입니다.
-	UserAgent = "rpt/" + Version + " (ROKFOSS PROJECT)"
-	// Version은 rpt 자체 버전입니다.
-	Version = "1.0.2"
 )
+
+// Version은 rpt 자체 버전입니다.
+//
+// 릴리스 빌드에서는 링커가 태그 값을 넣습니다.
+//
+//	go build -ldflags "-X github.com/krfoss/rpt/internal/config.Version=1.2.3"
+//
+// 상수로 두고 손으로 고치면 태그만 올리고 상수를 깜빡했을 때 패키지 버전과
+// 어긋납니다. 실제로 1.0.3 패키지 안의 바이너리가 1.0.2라고 답한 적이
+// 있어 링커 주입으로 바꿨습니다. 주입하지 않으면 개발 빌드로 봅니다.
+var Version = "dev"
+
+// UserAgent는 저장소 요청에 사용할 식별자입니다.
+func UserAgent() string { return "rpt/" + Version + " (ROKFOSS PROJECT)" }
 
 // Config는 한 번의 rpt 실행에 적용되는 설정입니다.
 type Config struct {
