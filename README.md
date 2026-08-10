@@ -4,6 +4,11 @@ apt 와 dpkg 가 없는 Linux 환경에서 [pkg.krfoss.org](https://pkg.krfoss.o
 데비안 패키지를 설치하고 관리하는 도구입니다. deb 파일을 하나씩 내려받아
 손으로 푸는 대신 `rpt install krfs-rport` 한 줄로 끝납니다.
 
+## 현재까지 사용 가능이 확인된 운영체제
+- Debian 계열
+- Arch 계열
+- Synology
+
 ```
 rpt update
 rpt install krfs-rport -y
@@ -30,12 +35,23 @@ rpt 가 지우므로 실수로 시스템 파일을 건드릴 일이 없습니다
 
 ## 설치
 
-Go 1.25 이상에서 정적 바이너리를 만들어 NAS 에 올립니다.
+[릴리스](https://github.com/KRFOSS/rpt/releases) 에서 배포판에 맞는 파일을 받아
+설치합니다. amd64 와 arm64 를 모두 제공합니다.
 
 ```sh
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o rpt .
-scp rpt root@nas:/usr/local/bin/rpt
+sudo dpkg -i rpt_1.0.0-1_amd64.deb                 # Debian 계열
+sudo rpm -i rpt-1.0.0-1.x86_64.rpm                 # RPM 계열
+sudo pacman -U rpt-1.0.0-1-x86_64.pkg.tar.zst      # Arch 계열
 ```
+
+소스에서 직접 빌드하려면 Go 1.25 이상이 필요합니다. 외부 라이브러리를
+링크하지 않으므로 결과물은 어느 배포판에서나 그대로 도는 정적 바이너리입니다.
+
+```sh
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o rpt .
+```
+
+시놀로지는 dpkg 가 없어 절차가 다릅니다. [시놀로지 DSM](#시놀로지-dsm) 을 보십시오.
 
 ## 명령
 
@@ -70,6 +86,11 @@ scp rpt root@nas:/usr/local/bin/rpt
 시놀로지 환경에서는 `/volumeN/@rokfoss` 를 우선 사용하고, 일반 Linux에서는
 기본적으로 `/opt/rpt` 와 `/var/lib/rpt`, `/var/cache/rpt` 를 사용합니다.
 
+`RPT_ROOT` 를 직접 지정하면 상태와 캐시도 그 아래로 따라갑니다
+(`<루트>/var/lib/rpt`, `<루트>/var/cache/rpt`). 설치물을 한 곳에 모아 두기
+위한 동작이며, 따로 흩어 두려면 `RPT_STATEDIR` 과 `RPT_CACHEDIR` 을 함께
+지정하십시오.
+
 ## 배치 구조
 
 ```
@@ -91,13 +112,50 @@ scp rpt root@nas:/usr/local/bin/rpt
 ## 알아 둘 점
 
 - **관리자 스크립트는 실행하지 않습니다.** 패키지의 `postinst` 는 보통
-  `systemctl enable` 을 부르는데, DSM 의 `synopkg` 체계와 별개로 유닛을 꽂는
-  것은 위험합니다. 설치 후 어떤 스크립트를 건너뛰었는지 알려 주므로 필요하면
-  직접 처리하십시오.
+  `systemctl enable` 이나 사용자 추가 같은 일을 하는데, 시스템 패키지 관리자
+  바깥에서 그런 변경을 가하는 것은 위험합니다. 시놀로지처럼 `synopkg` 가
+  서비스를 관리하는 환경이라면 더욱 그렇습니다. 설치 후 어떤 스크립트를
+  건너뛰었는지 알려 주므로 필요하면 직접 처리하십시오.
 - **저장소 밖 의존성은 경고만 합니다.** `libc6`, `rsync`, `openssh-client`
-  같은 것은 DSM 에 이미 들어 있어 rpt 가 따로 설치하지 않습니다.
+  같은 것은 대개 시스템에 이미 있으므로 rpt 가 따로 설치하지 않고 이름만
+  알려 줍니다. 없다면 배포판의 패키지 관리자로 설치하십시오.
 - **설정 파일은 덮어쓰지 않습니다.** 재설치나 업그레이드에서 사용자가 고친
   `conffiles` 는 그대로 둡니다. 지우려면 `purge` 를 쓰십시오.
+
+## 시놀로지 DSM
+
+DSM 은 업데이트할 때 시스템 파티션을 다시 씌웁니다. `/usr/bin` 이나 `/bin` 에
+둔 파일은 그때 사라지므로, 시놀로지에서는 설치 루트를 볼륨 안
+`/volumeN/@rokfoss` 로 잡습니다. 시스템 경로에는 심링크만 걸고, 업데이트로
+링크가 사라지면 `rpt relink` 한 번으로 되살립니다.
+
+dpkg 가 없어 rpt 자신은 처음 한 번만 손으로 올려야 합니다. dpkg 가 있는
+리눅스에서 바이너리를 꺼내 옮긴 뒤, 그것으로 rpt 를 다시 설치하면 됩니다.
+
+```sh
+# dpkg 가 있는 리눅스에서
+dpkg-deb -x rpt_1.0.0-1_amd64.deb out
+scp out/usr/bin/rpt root@nas:/tmp/rpt
+
+# 시놀로지에서
+chmod +x /tmp/rpt
+/tmp/rpt update
+/tmp/rpt install rpt -y
+rm /tmp/rpt
+```
+
+이후로는 `rpt update && rpt upgrade -y` 로 rpt 자신까지 함께 갱신됩니다.
+실행 중인 자기 바이너리도 교체할 수 있으므로 다시 손으로 풀 일은 없습니다.
+
+부트스트랩 사본을 `/usr/local/bin` 이나 `/usr/bin` 에 두지 마십시오. rpt 는
+자기가 만들지 않은 파일을 덮어쓰지 않으므로 심링크를 걸지 못하고, 사본이
+갈려 업그레이드해도 옛 것이 계속 실행됩니다. `/tmp` 에 두고 설치 후 지우면
+이 문제가 없습니다.
+
+설치한 명령이 곧바로 안 잡히면 셸이 옛 경로를 캐시한 것입니다. DSM 의 ash 는
+명령 경로를 기억하므로, 예전에 같은 이름의 파일이 다른 자리에 있었다면
+`No such file or directory` 가 계속 납니다. `hash -r` 을 실행하거나 다시
+로그인하십시오.
 
 ## 릴리스
 
@@ -106,7 +164,7 @@ scp rpt root@nas:/usr/local/bin/rpt
 올립니다.
 
 ```sh
-git tag v0.1.0 && git push origin v0.1.0
+git tag v1.0.1 && git push origin v1.0.1
 ```
 
 ## 라이선스

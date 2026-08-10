@@ -150,8 +150,9 @@ type RelinkResult struct {
 
 // Relink는 설치된 모든 패키지의 시스템 심링크를 다시 만듭니다.
 //
-// DSM 업데이트는 시스템 파티션을 다시 씌우기 때문에 /usr/local/bin 의
-// 링크가 사라질 수 있습니다. 설치 루트는 볼륨에 있으므로 링크만
+// 설치 루트와 달리 심링크는 시스템 경로에 있어 밖에서 지워질 수 있습니다.
+// 특히 DSM 업데이트는 시스템 파티션을 다시 씌우므로 /usr/local/bin 의
+// 링크가 통째로 사라집니다. 실제 파일은 설치 루트에 남아 있으니 링크만
 // 되살리면 그대로 다시 쓸 수 있습니다.
 func (m *Manager) Relink() ([]RelinkResult, error) {
 	var out []RelinkResult
