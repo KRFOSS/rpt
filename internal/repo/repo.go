@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,6 +81,11 @@ func (ix *Index) Names() []string {
 type Client struct {
 	cfg  *config.Config
 	http *http.Client
+
+	// OnRetry는 세대 불일치로 목록을 다시 받기 직전에 호출됩니다.
+	// 기다리는 동안 멈춘 것처럼 보이지 않도록 알리는 용도이며,
+	// 설정하지 않아도 동작에는 영향이 없습니다.
+	OnRetry func(attempt, total int, wait time.Duration)
 }
 
 // NewClient는 저장소 클라이언트를 만듭니다.
@@ -97,8 +103,47 @@ func (c *Client) indexCacheFile() string {
 	return filepath.Join(c.cfg.ListsDir(), "index.json")
 }
 
+// ErrMetadataSkew는 Release와 패키지 목록의 세대가 서로 어긋났다는 뜻입니다.
+//
+// 저장소가 색인을 다시 만드는 도중에 요청이 걸리면, 새로 쓰인 Release와
+// 아직 옛것인 Packages를 함께 받게 되어 해시가 맞지 않습니다. 파일이
+// 깨진 것이 아니라 잠깐의 과도기이므로 다시 받으면 대개 해결됩니다.
+var ErrMetadataSkew = errors.New("저장소 메타데이터의 세대가 서로 맞지 않습니다")
+
+// metadataAttempts는 세대 불일치를 만났을 때 목록 받기를 시도하는 총 횟수입니다.
+const metadataAttempts = 3
+
+// metadataRetryWait는 재시도 사이에 기다리는 시간입니다.
+// 색인 생성은 보통 순식간에 끝나므로 짧게 잡습니다.
+var metadataRetryWait = 2 * time.Second
+
 // Update는 저장소에서 목록을 새로 받아 검증하고 캐시에 저장합니다.
+//
+// 세대 불일치는 저장소 쪽의 일시적인 상태이므로 몇 번 다시 시도합니다.
+// 그 밖의 오류는 곧바로 돌려줍니다.
 func (c *Client) Update() (*Index, error) {
+	var lastErr error
+	for attempt := 1; attempt <= metadataAttempts; attempt++ {
+		ix, err := c.updateOnce()
+		if err == nil {
+			return ix, nil
+		}
+		if !errors.Is(err, ErrMetadataSkew) {
+			return nil, err
+		}
+		lastErr = err
+		if attempt < metadataAttempts {
+			if c.OnRetry != nil {
+				c.OnRetry(attempt, metadataAttempts, metadataRetryWait)
+			}
+			time.Sleep(metadataRetryWait)
+		}
+	}
+	return nil, lastErr
+}
+
+// updateOnce는 목록 받기와 검증을 한 번 수행합니다.
+func (c *Client) updateOnce() (*Index, error) {
 	inRelease, err := c.fetch(c.url("dists", c.cfg.Dist, "InRelease"))
 	if err != nil {
 		return nil, fmt.Errorf("InRelease를 받지 못했습니다: %w", err)
@@ -138,7 +183,9 @@ func (c *Client) Update() (*Index, error) {
 		return nil, fmt.Errorf("%s를 받지 못했습니다: %w", target, err)
 	}
 	if err := verifySHA256(raw, hashes[target].hash); err != nil {
-		return nil, fmt.Errorf("%s 검증에 실패했습니다: %w", target, err)
+		// Release는 서명으로 확인했으므로 어긋난 쪽은 목록이다.
+		// 저장소가 색인을 다시 만드는 중일 때 흔히 일어난다.
+		return nil, fmt.Errorf("%w (%s: %v)", ErrMetadataSkew, target, err)
 	}
 
 	if compressed {

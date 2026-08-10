@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/krfoss/rpt/internal/deb"
 	"github.com/krfoss/rpt/internal/pkgmgr"
@@ -18,8 +19,15 @@ import (
 // cmdUpdate는 저장소 목록을 새로 받아 검증합니다.
 func cmdUpdate(m *pkgmgr.Manager) error {
 	ui.Step("저장소 목록을 갱신합니다: %s", m.Cfg.RepoURL)
+	m.Client.OnRetry = func(attempt, total int, wait time.Duration) {
+		ui.Detail("저장소 목록이 갱신되는 중입니다. %s 뒤에 다시 받습니다 (%d/%d)", wait, attempt, total)
+	}
 	ix, err := m.Client.Update()
 	if err != nil {
+		if errors.Is(err, repo.ErrMetadataSkew) {
+			return fmt.Errorf("%w. 저장소가 색인을 다시 만드는 중일 수 있으니 "+
+				"잠시 후 rpt update 를 다시 실행하십시오 (캐시와는 무관하므로 rpt clean 은 도움이 되지 않습니다)", err)
+		}
 		return err
 	}
 	if ix.Signer != nil {
@@ -32,7 +40,40 @@ func cmdUpdate(m *pkgmgr.Manager) error {
 	} else {
 		ui.Info("%s 패키지 %d개", ix.Arch, len(ix.Packages))
 	}
+	printUpgradable(m, ix)
 	return nil
+}
+
+// printUpgradable은 갱신된 목록을 기준으로 올릴 수 있는 패키지를 알려 줍니다.
+//
+// 목록만 새로 받고 무엇이 달라졌는지 알려 주지 않으면, 사용자가 매번
+// rpt list --upgradable 을 따로 쳐야 합니다.
+func printUpgradable(m *pkgmgr.Manager, ix *repo.Index) {
+	installed := m.DB.List()
+	if len(installed) == 0 {
+		return
+	}
+
+	var lines []string
+	for _, rec := range installed {
+		p, ok := ix.Get(rec.Name)
+		if !ok {
+			continue
+		}
+		if deb.CompareVersions(p.Version, rec.Version) > 0 {
+			lines = append(lines, fmt.Sprintf("%s %s -> %s", rec.Name, rec.Version, p.Version))
+		}
+	}
+
+	if len(lines) == 0 {
+		ui.Info("설치된 패키지 %d개는 모두 최신입니다.", len(installed))
+		return
+	}
+	ui.Info("업그레이드할 수 있는 패키지 %d개:", len(lines))
+	for _, l := range lines {
+		ui.Info("  %s", l)
+	}
+	ui.Detail("rpt upgrade 로 한 번에 올릴 수 있습니다.")
 }
 
 // cmdInstall은 패키지를 설치합니다.
