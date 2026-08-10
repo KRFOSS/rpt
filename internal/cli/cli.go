@@ -124,7 +124,7 @@ func dispatch(m *pkgmgr.Manager, cmd string, args []string, opts options) error 
 	case "relink":
 		return cmdRelink(m)
 	case "web":
-		return cmdWeb(m, opts)
+		return cmdWeb(m, args, opts)
 	default:
 		return fmt.Errorf("알 수 없는 명령입니다: %s (rpt help 로 사용법을 확인하십시오)", cmd)
 	}
@@ -234,7 +234,7 @@ apt 가 없는 Linux 환경에서 ROKFOSS 저장소의 패키지를 관리합니
 	autoclean           저장소에서 사라진 옛 deb 파일만 지웁니다
 	relink              시스템 심링크를 다시 만듭니다
 	completion <셸>     셸 자동완성 스크립트를 출력합니다 (bash, zsh)
-	web                 로컬 웹 대시보드를 엽니다
+	web [stop|restart]  로컬 웹 대시보드를 열거나 멈춥니다
 	version             rpt 버전을 봅니다
 
 옵션:

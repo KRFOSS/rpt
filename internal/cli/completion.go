@@ -18,7 +18,7 @@ _rpt_completion() {
     cmd="${COMP_WORDS[1]}"
 
     if [ "${COMP_CWORD}" -eq 1 ]; then
-        COMPREPLY=($(compgen -W "update install remove purge upgrade autoremove list search show clean autoclean relink completion version help" -- "${cur}"))
+        COMPREPLY=($(compgen -W "update install remove purge upgrade autoremove list search show clean autoclean relink web completion version help" -- "${cur}"))
         return
     fi
 
@@ -31,6 +31,7 @@ _rpt_completion() {
         case "${cmd}" in
             list)            COMPREPLY=($(compgen -W "--installed --upgradable --root" -- "${cur}")) ;;
             install|upgrade) COMPREPLY=($(compgen -W "-y --yes --reinstall --root" -- "${cur}")) ;;
+            web)             COMPREPLY=($(compgen -W "--addr --root" -- "${cur}")) ;;
             *)               COMPREPLY=($(compgen -W "-y --yes --root" -- "${cur}")) ;;
         esac
         return
@@ -42,6 +43,9 @@ _rpt_completion() {
             ;;
         remove|purge|upgrade)
             COMPREPLY=($(compgen -W "$(rpt list --installed 2>/dev/null | cut -d/ -f1)" -- "${cur}"))
+            ;;
+        web)
+            COMPREPLY=($(compgen -W "stop restart" -- "${cur}"))
             ;;
         completion)
             COMPREPLY=($(compgen -W "bash zsh" -- "${cur}"))
@@ -82,6 +86,7 @@ _rpt() {
         'clean:내려받아 둔 deb 를 모두 지웁니다'
         'autoclean:저장소에서 사라진 옛 deb 만 지웁니다'
         'relink:시스템 심링크를 다시 만듭니다'
+        'web:로컬 웹 대시보드를 열거나 멈춥니다'
         'completion:셸 자동완성 스크립트를 출력합니다'
         'version:rpt 버전을 봅니다'
         'help:사용법을 봅니다'
@@ -106,6 +111,9 @@ _rpt() {
             ;;
         list)
             _values '옵션' '--installed[설치된 것만 봅니다]' '--upgradable[올릴 수 있는 것만 봅니다]'
+            ;;
+        web)
+            _values '하위 명령' 'stop[대시보드를 멈춥니다]' 'restart[멈췄다 다시 띄웁니다]'
             ;;
         completion)
             _values '셸' bash zsh

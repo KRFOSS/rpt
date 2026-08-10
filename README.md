@@ -77,6 +77,7 @@ CGO_ENABLED=0 go build -trimpath \
 | `rpt clean` | 내려받아 둔 deb 를 모두 지웁니다 |
 | `rpt autoclean` | 저장소에서 사라진 옛 deb 만 지웁니다 |
 | `rpt relink` | 시스템 심링크를 다시 만듭니다 |
+| `rpt web [stop\|restart]` | 로컬 웹 대시보드를 열거나 멈춥니다 |
 | `rpt completion <셸>` | bash, zsh 자동완성 스크립트를 출력합니다 |
 | `rpt web` | 로컬 웹 대시보드를 엽니다 (`127.0.0.1:47981`) |
 
@@ -133,14 +134,25 @@ rpt completion zsh  | sudo tee /usr/share/zsh/site-functions/_rpt >/dev/null
 /etc/krfs-rport            ->  /opt/rpt/etc/krfs-rport
 ```
 
+심링크를 걸 자리에 이미 다른 파일이 있으면 그대로 두고 경고만 합니다.
+제거할 때도 rpt 가 만든 심링크인지 확인한 뒤에만 걷어냅니다.
+
 ## 웹 지원
 
 `rpt web` 를 실행하면 `127.0.0.1:47981` 에서 웹 대시보드를 엽니다.
 브라우저에서 `update`, `install`, `remove`, `purge`, `upgrade`, `autoremove`, `list`, `search`, `show`, `clean`, `autoclean`, `relink`, `version`, `help` 를 모두 실행할 수 있습니다.
 상태 경로, 캐시 경로, 저장소 메타데이터, 설치된 패키지 목록도 함께 볼 수 있습니다.
 
-심링크를 걸 자리에 이미 다른 파일이 있으면 그대로 두고 경고만 합니다.
-제거할 때도 rpt 가 만든 심링크인지 확인한 뒤에만 걷어냅니다.
+```sh
+rpt web                      # 백그라운드로 띄웁니다
+rpt web restart              # 멈췄다 다시 띄웁니다 (새로 빌드한 뒤에 씁니다)
+rpt web stop                 # 멈춥니다
+rpt web --addr 0.0.0.0:8080  # 주소를 바꿔 띄웁니다
+```
+
+서버는 백그라운드로 돌아가며, 어느 프로세스인지는 상태 디렉터리의
+`web.pid` 에 적어 둡니다. `stop` 은 처리 중인 요청이 끝나기를 기다렸다가
+멈추므로 설치가 한창일 때 멈춰도 설치 기록이 날아가지 않습니다.
 
 ## 알아 둘 점
 

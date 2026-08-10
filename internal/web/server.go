@@ -2,9 +2,11 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,6 +26,7 @@ type Server struct {
 	addr string
 	tpl  *template.Template
 	mux  *http.ServeMux
+	srv  *http.Server
 }
 
 // New는 새 서버를 만듭니다.
@@ -36,24 +39,45 @@ func New(mgr *pkgmgr.Manager, addr string) *Server {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux = mux
+	s.srv = &http.Server{
+		Addr:           addr,
+		Handler:        mux,
+		ReadTimeout:    5 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		IdleTimeout:    30 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
 	return s
 }
 
 // Addr는 서버가 바인드할 주소를 돌려줍니다.
 func (s *Server) Addr() string { return s.addr }
 
-// ListenAndServe는 서버를 시작합니다.
-func (s *Server) ListenAndServe() error {
-	server := &http.Server{
-		Addr:           s.addr,
-		Handler:        s.mux,
-		ReadTimeout:    5 * time.Second,
-		WriteTimeout:   10 * time.Second,
-		IdleTimeout:    30 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-	return server.ListenAndServe()
+// Listen은 주소만 먼저 잡습니다. 요청은 아직 받지 않습니다.
+//
+// 주소를 잡는 것과 요청을 받는 것을 나눠 두면, 띄운 쪽이 "주소를 잡는 데
+// 성공했다"는 사실을 확인한 뒤에 다음 일을 할 수 있습니다.
+func (s *Server) Listen() (net.Listener, error) {
+	return net.Listen("tcp", s.addr)
 }
+
+// Serve는 잡아 둔 주소로 요청을 받기 시작합니다.
+func (s *Server) Serve(ln net.Listener) error { return s.srv.Serve(ln) }
+
+// ListenAndServe는 주소를 잡고 곧바로 요청을 받습니다.
+func (s *Server) ListenAndServe() error {
+	ln, err := s.Listen()
+	if err != nil {
+		return err
+	}
+	return s.Serve(ln)
+}
+
+// Shutdown은 처리 중인 요청이 끝나기를 기다렸다가 서버를 닫습니다.
+//
+// 설치가 한창일 때 프로세스를 그냥 죽이면 무엇을 설치했는지가 상태
+// 파일에 남지 않아 파일만 남고 기록이 사라집니다.
+func (s *Server) Shutdown(ctx context.Context) error { return s.srv.Shutdown(ctx) }
 
 // ServeHTTP는 Server를 http.Handler 로도 쓸 수 있게 합니다.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,8 +100,27 @@ type pageData struct {
 	IndexFetchedAt string
 	PackageCount   int
 	InstalledCount int
-	Installed      []installedRow
-	Result         *commandResult
+	// UpgradableCount는 새 버전이 나와 있는 설치 패키지 수입니다.
+	UpgradableCount int
+	Installed       []installedRow
+	// Available은 저장소에서 고를 수 있는 패키지입니다. 설치 칸의
+	// 고르기 목록을 채웁니다.
+	Available []pkgOption
+	// InstalledOptions는 업그레이드 칸의 고르기 목록입니다.
+	InstalledOptions []pkgOption
+	Result           *commandResult
+}
+
+// pkgOption은 고르기 목록에 오르는 패키지 하나입니다.
+type pkgOption struct {
+	Name       string
+	Version    string
+	Summary    string
+	Installed  bool
+	Upgradable bool
+	// SearchKey는 목록에서 걸러낼 때 쓰는 소문자 문자열입니다.
+	// 브라우저에서 매번 소문자로 바꾸지 않도록 미리 만들어 둡니다.
+	SearchKey string
 }
 
 type installedRow struct {
@@ -91,6 +134,12 @@ type installedRow struct {
 	Links          int
 	SkippedScripts int
 	Upgradable     bool
+
+	// Summary와 InstalledAtText는 화면에만 쓰는 값입니다. JSON 응답의
+	// description과 installed_at은 예전 형식 그대로 두어야 하므로
+	// 표시용을 따로 둡니다.
+	Summary         string `json:"-"`
+	InstalledAtText string `json:"-"`
 }
 
 type commandResult struct {
@@ -192,7 +241,55 @@ func (s *Server) buildPageData(result *commandResult) pageData {
 	if status.IndexAvailable && status.IndexFetchedAt != nil {
 		data.IndexFetchedAt = status.IndexFetchedAt.Format("2006-01-02 15:04:05")
 	}
+	for _, row := range status.Installed {
+		if row.Upgradable {
+			data.UpgradableCount++
+		}
+	}
+	data.Available = s.availableOptions()
+	data.InstalledOptions = installedOptions(status.Installed)
 	return data
+}
+
+// availableOptions는 저장소 목록에서 고를 수 있는 패키지를 추립니다.
+// 목록을 아직 받지 않았으면 비어 있고, 그때는 화면이 직접 입력으로 돌아갑니다.
+func (s *Server) availableOptions() []pkgOption {
+	if s.mgr.Index == nil {
+		return nil
+	}
+	names := s.mgr.Index.Names()
+	out := make([]pkgOption, 0, len(names))
+	for _, name := range names {
+		p := s.mgr.Index.Packages[name]
+		opt := pkgOption{
+			Name:    p.Name,
+			Version: p.Version,
+			Summary: p.Summary(),
+		}
+		if inst, ok := s.mgr.DB.Get(name); ok {
+			opt.Installed = true
+			opt.Upgradable = deb.CompareVersions(p.Version, inst.Version) > 0
+		}
+		opt.SearchKey = strings.ToLower(opt.Name + " " + opt.Summary)
+		out = append(out, opt)
+	}
+	return out
+}
+
+// installedOptions는 설치된 패키지를 고르기 목록 형태로 바꿉니다.
+func installedOptions(rows []installedRow) []pkgOption {
+	out := make([]pkgOption, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pkgOption{
+			Name:       r.Name,
+			Version:    r.Version,
+			Summary:    r.Summary,
+			Installed:  true,
+			Upgradable: r.Upgradable,
+			SearchKey:  strings.ToLower(r.Name + " " + r.Summary),
+		})
+	}
+	return out
 }
 
 func (s *Server) buildStatusResponse() statusResponse {
@@ -235,6 +332,11 @@ func (s *Server) installedRows() []installedRow {
 			Conffiles:      len(item.Conffiles),
 			Links:          len(item.Links),
 			SkippedScripts: len(item.SkippedScripts),
+
+			// 표에는 설명 첫 줄만 넣습니다. 전문을 그대로 넣으면
+			// 여러 줄짜리 설명이 표를 무너뜨립니다.
+			Summary:         deb.ShortDescription(item.Description),
+			InstalledAtText: item.InstalledAt.Format("2006-01-02 15:04"),
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Name < rows[j].Name })
@@ -674,7 +776,7 @@ func (s *Server) executeCommand(r *http.Request) *commandResult {
 		appendf("심링크 %d개를 확인했습니다.", total)
 		res.OK = true
 		return res
-}
+	}
 
 	res.Error = "처리되지 않은 명령입니다"
 	return res
@@ -705,721 +807,6 @@ func humanSize(n int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
-func errorsIs(err, target error) bool { return err != nil && target != nil && (err == target || strings.Contains(err.Error(), target.Error())) }
-
-const pageTemplate = `<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <title>rpt 웹 대시보드</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
-  <style>
-    :root {
-      --focus-ring: #06b6d4;
-    }
-
-    html {
-      box-sizing: border-box;
-    }
-
-    *, *::before, *::after {
-      box-sizing: inherit;
-    }
-
-    html, body {
-      width: 100%;
-      overflow-x: hidden;
-    }
-
-    * {
-      font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-    }
-
-    body {
-      background: #1a1a1a;
-      color: #e5e5e5;
-      margin: 0;
-      padding: 0;
-      position: relative;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    :focus-visible {
-      outline: 3px solid var(--focus-ring);
-      outline-offset: 2px;
-    }
-
-    /* Navbar */
-    .navbar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      box-shadow: none !important;
-      border: none !important;
-      padding-bottom: 40px !important;
-      z-index: 1000;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.65) 20%, rgba(0,0,0,0.50) 40%, rgba(0,0,0,0.35) 60%, rgba(0,0,0,0.20) 75%, rgba(0,0,0,0.10) 85%, rgba(0,0,0,0.04) 93%, rgba(0,0,0,0) 100%) !important;
-      transition: transform 0.4s cubic-bezier(0.4,0,0.2,1), background 0.4s ease;
-      padding: 23px !important;
-      transform: translateY(0);
-    }
-
-    .navbar .container {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: nowrap;
-      width: 100%;
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 1rem;
-    }
-
-    .navbar-brand img {
-      height: 40px;
-    }
-
-    /* Main */
-    .main-container {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 140px 20px 80px;
-      box-sizing: border-box;
-    }
-
-    .content-wrapper {
-      max-width: 1200px;
-      width: 100%;
-      text-align: center;
-    }
-
-    .grid-2col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 24px;
-      margin-bottom: 32px;
-    }
-
-    .grid-2col .info-section {
-      margin-bottom: 0;
-    }
-
-    h1 {
-      font-size: 48px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 0.5rem;
-    }
-
-    .subtitle {
-      font-size: 20px;
-      color: #fff;
-      margin-bottom: 0.5rem;
-    }
-
-    .description {
-      font-size: 16px;
-      line-height: 1.5;
-      color: #e5e5e5;
-      margin-bottom: 2.5rem;
-    }
-
-    /* Info Section */
-    .info-section {
-      background-color: #242424;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 32px;
-      text-align: left;
-    }
-
-    .info-section-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: #fff;
-      margin: 0 0 16px 0;
-      padding-bottom: 12px;
-      border-bottom: 0.5px solid rgba(84,84,88,0.4);
-    }
-
-    .info-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px 0;
-      border-bottom: 0.5px solid rgba(84,84,88,0.4);
-    }
-
-    .info-item:last-child {
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-
-    .info-item:first-child {
-      padding-top: 0;
-    }
-
-    .info-label {
-      font-size: 15px;
-      line-height: 20px;
-      color: rgba(235,235,245,0.6);
-      font-weight: 500;
-      flex-shrink: 0;
-      margin-right: 16px;
-    }
-
-    .info-value {
-      font-size: 14px;
-      line-height: 20px;
-      color: #ffffff;
-      font-weight: 400;
-      text-align: right;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-      word-break: break-all;
-      white-space: pre-wrap;
-      max-width: 75%;
-    }
-
-    /* Buttons */
-    .actions {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 32px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .button {
-      background-color: #242424;
-      color: #ffffff;
-      border: 1px solid rgba(84,84,88,0.4);
-      border-radius: 10px;
-      padding: 12px 24px;
-      font-size: 15px;
-      font-weight: 600;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background-color 0.2s, transform 0.1s;
-      user-select: none;
-    }
-
-    .button:hover {
-      background-color: #2c2c2e;
-    }
-
-    .button:active {
-      transform: scale(0.98);
-    }
-
-    .button-primary {
-      background-color: #ffffff;
-      color: #000000;
-      border: none;
-    }
-
-    .button-primary:hover {
-      background-color: rgba(255,255,255,0.85);
-    }
-
-    .button-sm {
-      padding: 8px 16px;
-      font-size: 13px;
-      border-radius: 8px;
-    }
-
-    .button-danger {
-      color: #ef4444;
-      border-color: rgba(239,68,68,0.3);
-    }
-
-    .button-danger:hover {
-      background-color: rgba(239,68,68,0.1);
-    }
-
-    .button-success {
-      color: #34d399;
-      border-color: rgba(52,211,153,0.3);
-    }
-
-    .button-success:hover {
-      background-color: rgba(52,211,153,0.1);
-    }
-
-    /* Forms inside sections */
-    .form-group {
-      margin-bottom: 16px;
-    }
-
-    .form-group:last-child {
-      margin-bottom: 0;
-    }
-
-    .form-label {
-      display: block;
-      font-size: 14px;
-      color: rgba(235,235,245,0.6);
-      font-weight: 500;
-      margin-bottom: 8px;
-    }
-
-    .form-input {
-      width: 100%;
-      box-sizing: border-box;
-      background: #1a1a1a;
-      color: #e5e5e5;
-      border: 1px solid rgba(84,84,88,0.4);
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .form-input:focus {
-      border-color: rgba(84,84,88,0.8);
-    }
-
-    textarea.form-input {
-      min-height: 60px;
-      resize: vertical;
-    }
-
-    .form-check {
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .form-check input[type="checkbox"],
-    .form-check input[type="radio"] {
-      width: 16px;
-      height: 16px;
-      accent-color: #06b6d4;
-    }
-
-    .form-check span {
-      font-size: 14px;
-      color: #e5e5e5;
-    }
-
-    .form-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-end;
-    }
-
-    .form-row .form-group {
-      flex: 1;
-    }
-
-    .form-divider {
-      height: 1px;
-      background: rgba(84,84,88,0.4);
-      margin: 20px 0;
-      border: none;
-    }
-
-    /* Result */
-    .result-card {
-      background-color: #242424;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 32px;
-      text-align: left;
-      border: 1px solid rgba(84,84,88,0.4);
-    }
-
-    .result-card.result-ok {
-      border-color: rgba(52,211,153,0.5);
-    }
-
-    .result-card.result-err {
-      border-color: rgba(239,68,68,0.5);
-    }
-
-    .result-title {
-      font-size: 16px;
-      font-weight: 700;
-      margin: 0 0 12px 0;
-    }
-
-    .result-ok .result-title {
-      color: #34d399;
-    }
-
-    .result-err .result-title {
-      color: #ef4444;
-    }
-
-    .result-error {
-      color: #ef4444;
-      font-size: 14px;
-      line-height: 1.6;
-      margin-bottom: 12px;
-      background: rgba(239,68,68,0.08);
-      padding: 12px;
-      border-radius: 8px;
-      border: 1px solid rgba(239,68,68,0.2);
-    }
-
-    .result-pre {
-      white-space: pre-wrap;
-      margin: 0;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
-      line-height: 1.6;
-      color: rgba(235,235,245,0.8);
-      background: #1a1a1a;
-      padding: 16px;
-      border-radius: 8px;
-      border: 1px solid rgba(84,84,88,0.4);
-      max-height: 400px;
-      overflow-y: auto;
-    }
-
-    /* Table */
-    .pkg-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-
-    .pkg-table th {
-      text-align: left;
-      padding: 12px 12px;
-      color: rgba(235,235,245,0.6);
-      font-weight: 600;
-      font-size: 13px;
-      border-bottom: 1px solid rgba(84,84,88,0.4);
-    }
-
-    .pkg-table td {
-      padding: 12px 12px;
-      color: #e5e5e5;
-      border-bottom: 0.5px solid rgba(84,84,88,0.25);
-      vertical-align: top;
-    }
-
-    .pkg-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .pkg-table .mono {
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-      font-size: 13px;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .badge-upgrade {
-      background: rgba(251,191,36,0.12);
-      color: #fbbf24;
-      border: 1px solid rgba(251,191,36,0.25);
-    }
-
-    .badge-auto {
-      background: rgba(56,189,248,0.1);
-      color: #38bdf8;
-      border: 1px solid rgba(56,189,248,0.2);
-    }
-
-    .badge-manual {
-      background: rgba(52,211,153,0.1);
-      color: #34d399;
-      border: 1px solid rgba(52,211,153,0.2);
-    }
-
-    .empty-text {
-      text-align: center;
-      color: rgba(235,235,245,0.4);
-      padding: 32px 0;
-      font-size: 15px;
-    }
-
-    .pkg-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .pkg-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: #1a1a1a;
-      border: 1px solid rgba(84,84,88,0.4);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      color: #e5e5e5;
-    }
-
-    .pkg-chip-name {
-      font-weight: 600;
-      color: #fff;
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-    }
-
-    .pkg-chip-ver {
-      color: rgba(235,235,245,0.4);
-      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-    }
-
-    .pkg-chip-actions {
-      display: inline-flex;
-      gap: 4px;
-      margin-left: 4px;
-    }
-
-    .pkg-chip-btn {
-      background: none;
-      border: 1px solid rgba(84,84,88,0.4);
-      border-radius: 5px;
-      padding: 2px 8px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background-color 0.2s, transform 0.1s;
-    }
-
-    .pkg-chip-btn:hover {
-      transform: scale(0.97);
-    }
-
-    .pkg-chip-btn:active {
-      transform: scale(0.95);
-    }
-
-    .pkg-chip-btn.remove {
-      color: #fbbf24;
-      border-color: rgba(251,191,36,0.3);
-    }
-
-    .pkg-chip-btn.remove:hover {
-      background: rgba(251,191,36,0.1);
-    }
-
-    .pkg-chip-btn.purge {
-      color: #ef4444;
-      border-color: rgba(239,68,68,0.3);
-    }
-
-    .pkg-chip-btn.purge:hover {
-      background: rgba(239,68,68,0.1);
-    }
-
-    .footer-text {
-      font-size: 14px;
-      color: #aaa;
-      margin-top: 2rem;
-      text-align: center;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        animation: none !important;
-        transition: none !important;
-      }
-    }
-  </style>
-</head>
-<body>
-  <nav class="navbar">
-    <div class="container">
-      <a class="navbar-brand" href="/">
-        <img loading="eager" decoding="async" src="https://cdn.krfoss.org/web/ROKFOSS.png" alt="ROKFOSS">
-      </a>
-    </div>
-  </nav>
-
-  <main class="main-container">
-    <div class="content-wrapper">
-      <h1>RPT</h1>
-      <p class="subtitle">ROKFOSS 패키지 관리자</p>
-      <p class="description">CLI 명령을 웹에서 실행합니다. update, install, remove, purge, upgrade, autoremove, list, search, show, clean, autoclean, relink 을 모두 지원합니다.</p>
-
-      {{if .Result}}
-      <div class="result-card {{if .Result.OK}}result-ok{{else}}result-err{{end}}">
-        <h3 class="result-title">결과: {{.Result.Command}}</h3>
-        {{if .Result.Error}}<div class="result-error">{{.Result.Error}}</div>{{end}}
-        {{if .Result.Lines}}<pre class="result-pre">{{range .Result.Lines}}{{.}}
-{{end}}</pre>{{end}}
-      </div>
-      {{end}}
-
-      <!-- 시스템 상태 -->
-      <div class="info-section">
-        <h3 class="info-section-title">시스템 상태</h3>
-        <div class="info-item">
-          <span class="info-label">버전</span>
-          <span class="info-value">{{.Version}}</span>
-        </div>
-        <div class="info-item">
-          <span class="info-label">갱신 시각</span>
-          <span class="info-value">{{.IndexFetchedAt}}</span>
-        </div>
-      </div>
-
-      <!-- 기본 명령 -->
-      <div class="actions">
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="update"><button type="submit" class="button button-primary">update</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="upgrade"><button type="submit" class="button button-success">upgrade</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="autoremove"><button type="submit" class="button">autoremove</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="clean"><button type="submit" class="button">clean</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="autoclean"><button type="submit" class="button">autoclean</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="relink"><button type="submit" class="button">relink</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="version"><button type="submit" class="button button-sm">version</button></form>
-        <form method="post" action="/command" style="display:contents;"><input type="hidden" name="cmd" value="help"><button type="submit" class="button button-sm">help</button></form>
-      </div>
-
-      <div class="grid-2col">
-        <!-- 설치 -->
-        <div class="info-section">
-          <h3 class="info-section-title">설치</h3>
-          <form method="post" action="/command">
-            <input type="hidden" name="cmd" value="install">
-            <div class="form-group">
-              <label class="form-label">패키지 이름</label>
-              <input type="text" name="names" class="form-input" placeholder="krfs-rport">
-            </div>
-            <div class="form-group">
-              <label class="form-check"><input type="checkbox" name="reinstall"><span>이미 설치된 경우 다시 설치</span></label>
-            </div>
-            <div class="form-group">
-              <button type="submit" class="button button-primary" style="width:100%;">install</button>
-            </div>
-          </form>
-
-          <hr class="form-divider">
-
-          <form method="post" action="/command">
-            <input type="hidden" name="cmd" value="upgrade">
-            <div class="form-group">
-              <label class="form-label">패키지 이름 (비우면 전체 업그레이드)</label>
-              <input type="text" name="names" class="form-input" placeholder="krfs-rport">
-            </div>
-            <div class="form-group">
-              <button type="submit" class="button button-success" style="width:100%;">upgrade</button>
-            </div>
-          </form>
-        </div>
-
-        <!-- 제거 -->
-        <div class="info-section">
-          <h3 class="info-section-title">제거</h3>
-          {{if .Installed}}
-          <div class="pkg-chips">
-            {{range .Installed}}
-            <div class="pkg-chip">
-              <span class="pkg-chip-name">{{.Name}}</span>
-              <span class="pkg-chip-ver">{{.Version}}</span>
-              <span class="pkg-chip-actions">
-                <form method="post" action="/command" style="display:inline;"><input type="hidden" name="cmd" value="remove"><input type="hidden" name="names" value="{{.Name}}"><button type="submit" class="pkg-chip-btn remove">remove</button></form>
-                <form method="post" action="/command" style="display:inline;"><input type="hidden" name="cmd" value="purge"><input type="hidden" name="names" value="{{.Name}}"><button type="submit" class="pkg-chip-btn purge">purge</button></form>
-              </span>
-            </div>
-            {{end}}
-          </div>
-          {{else}}
-          <p class="empty-text">설치된 패키지가 없습니다.</p>
-          {{end}}
-        </div>
-      </div>
-
-      <div class="grid-2col">
-        <!-- 조회 -->
-        <div class="info-section">
-          <h3 class="info-section-title">조회</h3>
-          <form method="post" action="/command">
-            <input type="hidden" name="cmd" value="list">
-            <div class="form-group">
-              <label class="form-check"><input type="checkbox" name="installed"><span>설치된 패키지만</span></label>
-              <label class="form-check"><input type="checkbox" name="upgradable"><span>업그레이드 가능한 패키지만</span></label>
-            </div>
-            <div class="form-group">
-              <button type="submit" class="button" style="width:100%;">list</button>
-            </div>
-          </form>
-
-          <hr class="form-divider">
-
-          <form method="post" action="/command">
-            <input type="hidden" name="cmd" value="search">
-            <div class="form-group">
-              <label class="form-label">검색어</label>
-              <input type="text" name="q" class="form-input" placeholder="rport">
-            </div>
-            <div class="form-group">
-              <button type="submit" class="button" style="width:100%;">search</button>
-            </div>
-          </form>
-        </div>
-
-        <!-- 패키지 상세 -->
-        <div class="info-section">
-          <h3 class="info-section-title">패키지 상세</h3>
-          <form method="post" action="/command">
-            <input type="hidden" name="cmd" value="show">
-            <div class="form-group">
-              <label class="form-label">패키지 이름</label>
-              <input type="text" name="names" class="form-input" placeholder="krfs-rport">
-            </div>
-            <div class="form-group">
-              <button type="submit" class="button" style="width:100%;">show</button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <!-- 설치된 패키지 -->
-      <div class="info-section">
-        <h3 class="info-section-title">설치된 패키지</h3>
-        {{if .Installed}}
-        <div style="overflow-x: auto;">
-          <table class="pkg-table">
-            <thead>
-              <tr><th>패키지</th><th>버전</th><th>상태</th><th>설명</th><th>설치 시각</th></tr>
-            </thead>
-            <tbody>
-              {{range .Installed}}
-              <tr>
-                <td style="font-weight:600;color:#fff;">{{.Name}}</td>
-                <td class="mono">{{.Version}}</td>
-                <td>{{if .Upgradable}}<span class="badge badge-upgrade">업그레이드 가능</span>{{else}}<span class="badge badge-manual">설치됨</span>{{end}}</td>
-                <td>{{if .Description}}{{.Description}}{{else}}<span style="color:rgba(235,235,245,0.3);">-</span>{{end}}</td>
-                <td class="mono">{{.InstalledAt}}</td>
-              </tr>
-              {{end}}
-            </tbody>
-          </table>
-        </div>
-        {{else}}
-        <p class="empty-text">설치된 패키지가 없습니다.</p>
-        {{end}}
-      </div>
-
-      <p class="footer-text">rpt {{.Version}} · {{.Now}}</p>
-    </div>
-  </main>
-</body>
-</html>`
+func errorsIs(err, target error) bool {
+	return err != nil && target != nil && (err == target || strings.Contains(err.Error(), target.Error()))
+}
