@@ -17,11 +17,25 @@ import (
 )
 
 // cmdUpdate는 저장소 목록을 새로 받아 검증합니다.
+//
+// 출력은 apt update 와 같은 순서로 보여 줍니다. 받은 파일과 크기, 총
+// 내려받기 양, 그리고 올릴 수 있는 패키지가 있는지가 차례로 나옵니다.
 func cmdUpdate(m *pkgmgr.Manager) error {
-	ui.Step("저장소 목록을 갱신합니다: %s", m.Cfg.RepoURL)
-	m.Client.OnRetry = func(attempt, total int, wait time.Duration) {
-		ui.Detail("저장소 목록이 갱신되는 중입니다. %s 뒤에 다시 받습니다 (%d/%d)", wait, attempt, total)
+	var (
+		count int
+		total int64
+	)
+	start := time.Now()
+
+	m.Client.OnFetch = func(label string, size int64) {
+		count++
+		total += size
+		ui.Plain("받기:%d %s %s [%s B]", count, m.Cfg.RepoURL, label, ui.Thousands(size))
 	}
+	m.Client.OnRetry = func(attempt, attempts int, wait time.Duration) {
+		ui.Plain("저장소 목록이 갱신되는 중입니다. %s 뒤에 다시 받습니다 (%d/%d)", wait, attempt, attempts)
+	}
+
 	ix, err := m.Client.Update()
 	if err != nil {
 		if errors.Is(err, repo.ErrMetadataSkew) {
@@ -30,50 +44,60 @@ func cmdUpdate(m *pkgmgr.Manager) error {
 		}
 		return err
 	}
+
+	elapsed := time.Since(start)
+	ui.Plain("내려받기 %s 바이트, 소요시간 %d초 (%s/초)",
+		ui.Thousands(total), int(elapsed.Seconds()), downloadRate(total, elapsed))
 	if ix.Signer != nil {
-		ui.Detail("서명 확인: %s", ix.Signer.Identity)
+		ui.Plain("서명 확인: %s", ix.Signer.Identity)
 	}
-	ui.Detail("%s / %s / %s", ix.Origin, ix.Suite, ix.Component)
-	if len(ix.OtherArches) > 0 {
-		ui.Info("%s 패키지 %d개 (%s 목록은 건너뜁니다)",
-			ix.Arch, len(ix.Packages), strings.Join(ix.OtherArches, ", "))
-	} else {
-		ui.Info("%s 패키지 %d개", ix.Arch, len(ix.Packages))
-	}
+	ui.Plain("패키지 목록을 읽는 중입니다... 완료")
 	printUpgradable(m, ix)
 	return nil
 }
 
+// downloadRate는 초당 내려받기 속도를 apt 와 비슷한 표기로 만듭니다.
+func downloadRate(bytes int64, d time.Duration) string {
+	sec := d.Seconds()
+	if sec <= 0 {
+		sec = 0.001
+	}
+	bps := float64(bytes) / sec
+	switch {
+	case bps >= 1024*1024:
+		return fmt.Sprintf("%.1f M바이트", bps/(1024*1024))
+	case bps >= 1024:
+		return fmt.Sprintf("%.1f k바이트", bps/1024)
+	default:
+		return fmt.Sprintf("%.0f 바이트", bps)
+	}
+}
+
 // printUpgradable은 갱신된 목록을 기준으로 올릴 수 있는 패키지를 알려 줍니다.
 //
-// 목록만 새로 받고 무엇이 달라졌는지 알려 주지 않으면, 사용자가 매번
-// rpt list --upgradable 을 따로 쳐야 합니다.
+// apt 는 개수만 알려 주고 목록은 따로 치게 하지만, ROKFOSS 저장소는
+// 패키지가 몇 개 되지 않으므로 무엇이 올라가는지 바로 보여 줍니다.
 func printUpgradable(m *pkgmgr.Manager, ix *repo.Index) {
-	installed := m.DB.List()
-	if len(installed) == 0 {
-		return
-	}
-
 	var lines []string
-	for _, rec := range installed {
+	for _, rec := range m.DB.List() {
 		p, ok := ix.Get(rec.Name)
 		if !ok {
 			continue
 		}
 		if deb.CompareVersions(p.Version, rec.Version) > 0 {
-			lines = append(lines, fmt.Sprintf("%s %s -> %s", rec.Name, rec.Version, p.Version))
+			lines = append(lines, fmt.Sprintf("  %s %s -> %s", rec.Name, rec.Version, p.Version))
 		}
 	}
 
 	if len(lines) == 0 {
-		ui.Info("설치된 패키지 %d개는 모두 최신입니다.", len(installed))
+		ui.Plain("모든 패키지가 최신입니다.")
 		return
 	}
-	ui.Info("업그레이드할 수 있는 패키지 %d개:", len(lines))
+	ui.Plain("%d개 패키지를 업그레이드할 수 있습니다:", len(lines))
 	for _, l := range lines {
-		ui.Info("  %s", l)
+		ui.Plain("%s", l)
 	}
-	ui.Detail("rpt upgrade 로 한 번에 올릴 수 있습니다.")
+	ui.Plain("업그레이드하려면 'rpt upgrade' 를 실행하십시오.")
 }
 
 // cmdInstall은 패키지를 설치합니다.

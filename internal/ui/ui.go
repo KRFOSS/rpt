@@ -7,6 +7,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"golang.org/x/term"
@@ -59,6 +60,30 @@ func Error(format string, a ...any) {
 // 다른 도구로 파이프될 수 있으므로 색을 입히지 않습니다.
 func Out(format string, a ...any) {
 	fmt.Fprintf(os.Stdout, format+"\n", a...)
+}
+
+// Plain은 들여쓰기나 접두사 없이 진행 상황을 출력합니다.
+// apt 와 같은 모양으로 보여 주어야 하는 줄에 씁니다.
+func Plain(format string, a ...any) {
+	fmt.Fprintf(os.Stderr, format+"\n", a...)
+}
+
+// Thousands는 숫자에 세 자리마다 쉼표를 넣습니다.
+// apt 가 내려받은 크기를 이렇게 표시합니다.
+func Thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	neg := ""
+	if strings.HasPrefix(s, "-") {
+		neg, s = "-", s[1:]
+	}
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	return neg + b.String()
 }
 
 // HumanSize는 바이트 수를 읽기 쉬운 단위로 바꿉니다.

@@ -41,8 +41,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ruby-dev rpm zstd libarchive-tools && sudo gem install fpm
       - name: 실행 파일 빌드
         run: |
-          mkdir -p build release
+          mkdir -p build release completions
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} go build -trimpath -o build/${BINARY_NAME} .
+          # 자동완성 스크립트는 아키텍처와 무관하므로 러너에서 바로 만든다.
+          go run . completion bash > completions/${BINARY_NAME}
+          go run . completion zsh > completions/_${BINARY_NAME}
       - name: DEB, RPM, Arch 패키지 생성
         env:
           # 입력값을 셸에 직접 펼치면 명령 주입이 되므로 환경 변수로 받는다.
@@ -73,9 +76,9 @@ jobs:
             --maintainer "ROKFOSS PROJECT <krfoss@krfoss.org>"
             --description "${DESCRIPTION}"
           )
-          fpm "${COMMON[@]}" -t deb -a ${{ matrix.debarch }} -p "release/${PACKAGE_NAME}_${VERSION}-1_${{ matrix.debarch }}.deb" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
-          fpm "${COMMON[@]}" -t rpm -a ${{ matrix.rpmarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1.${{ matrix.rpmarch }}.rpm" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
-          fpm "${COMMON[@]}" -t pacman -a ${{ matrix.archarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1-${{ matrix.archarch }}.pkg.tar.zst" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}"
+          fpm "${COMMON[@]}" -t deb -a ${{ matrix.debarch }} -p "release/${PACKAGE_NAME}_${VERSION}-1_${{ matrix.debarch }}.deb" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}" "completions/${BINARY_NAME}=/usr/share/bash-completion/completions/${BINARY_NAME}" "completions/_${BINARY_NAME}=/usr/share/zsh/site-functions/_${BINARY_NAME}"
+          fpm "${COMMON[@]}" -t rpm -a ${{ matrix.rpmarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1.${{ matrix.rpmarch }}.rpm" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}" "completions/${BINARY_NAME}=/usr/share/bash-completion/completions/${BINARY_NAME}" "completions/_${BINARY_NAME}=/usr/share/zsh/site-functions/_${BINARY_NAME}"
+          fpm "${COMMON[@]}" -t pacman -a ${{ matrix.archarch }} -p "release/${PACKAGE_NAME}-${VERSION}-1-${{ matrix.archarch }}.pkg.tar.zst" "build/${BINARY_NAME}=/usr/bin/${BINARY_NAME}" "completions/${BINARY_NAME}=/usr/share/bash-completion/completions/${BINARY_NAME}" "completions/_${BINARY_NAME}=/usr/share/zsh/site-functions/_${BINARY_NAME}"
       - uses: actions/upload-artifact@v4
         with:
           name: packages-${{ matrix.goarch }}
@@ -98,7 +101,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
         run: |
-          ARGS=(--repo "${GITHUB_REPOSITORY}" --generate-notes)
+          ARGS=(--repo "${GITHUB_REPOSITORY}")
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             # 태그 위에서 도는 것이 아니므로 태그 이름을 만들고 대상 커밋을 지정한다.
             TAG="v${INPUT_VERSION#v}"
@@ -107,6 +110,12 @@ jobs:
             TAG="${GITHUB_REF_NAME}"
           fi
           echo "릴리스 태그: ${TAG}"
+
+          # 자동 생성 노트는 PR 작성자만 표시하므로 공동 작업자를 덧붙인다.
+          NOTES=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${TAG}" -f target_commitish="${GITHUB_SHA}" --jq .body)
+          NOTES="${NOTES}"$'\n\n공동 작업: @xenix4845'
+
           cd release
           sha256sum * > checksums.txt
-          gh release create "${TAG}" * "${ARGS[@]}"
+          gh release create "${TAG}" * "${ARGS[@]}" --notes "${NOTES}"
