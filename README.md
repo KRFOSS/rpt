@@ -1,6 +1,6 @@
 # rpt — ROKFOSS 패키지 관리자
 
-apt 와 dpkg 가 없는 시놀로지 DSM 에서 [pkg.krfoss.org](https://pkg.krfoss.org) 의
+apt 와 dpkg 가 없는 Linux 환경에서 [pkg.krfoss.org](https://pkg.krfoss.org) 의
 데비안 패키지를 설치하고 관리하는 도구입니다. deb 파일을 하나씩 내려받아
 손으로 푸는 대신 `rpt install krfs-rport` 한 줄로 끝납니다.
 
@@ -14,13 +14,12 @@ rpt remove krfs-rport
 ## 무엇이 다른가
 
 시스템 패키지 관리자와 **절대 섞이지 않습니다.** `/var/lib/dpkg` 를 읽지도
-쓰지도 않고, 설치 목록은 rpt 자신의 루트 아래에만 둡니다. rpt 가 만든 것만
+쓰지도 않고, 설치 목록과 캐시는 rpt 가 정한 위치에만 둡니다. rpt 가 만든 것만
 rpt 가 지우므로 실수로 시스템 파일을 건드릴 일이 없습니다.
 
-- **DSM 업데이트에 살아남습니다.** 시놀로지는 업데이트할 때 시스템 파티션을
-  다시 씌우기 때문에 `/usr/bin` 에 설치하면 전부 날아갑니다. rpt 는 볼륨 안
-  `/volume1/@rokfoss` 에 풀고 `/usr/local/bin` 에는 심링크만 겁니다. 업데이트
-  뒤에 링크가 사라졌다면 `rpt relink` 한 번이면 됩니다.
+- **시스템 파일과 분리됩니다.** 설치 루트와 상태/캐시 경로를 분리해 두므로
+  배포판의 패키지 관리자와 충돌하지 않습니다. 필요하면 `RPT_ROOT`,
+  `RPT_STATEDIR`, `RPT_CACHEDIR` 로 배치를 조정할 수 있습니다.
 - **서명을 검증합니다.** 저장소 GPG 키를 바이너리에 내장해 InRelease 서명을
   확인하고, 거기 적힌 SHA256 으로 패키지 목록을, 목록에 적힌 SHA256 으로
   deb 파일을 확인합니다.
@@ -61,25 +60,29 @@ scp rpt root@nas:/usr/local/bin/rpt
 
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
-| `RPT_ROOT` | 첫 볼륨의 `@rokfoss` | 패키지를 푸는 설치 루트 |
+| `RPT_ROOT` | `/opt/rpt` | 패키지를 푸는 설치 루트 |
+| `RPT_STATEDIR` | `/var/lib/rpt` | 상태 파일과 목록 캐시 위치 |
+| `RPT_CACHEDIR` | `/var/cache/rpt` | 내려받은 deb 캐시 위치 |
 | `RPT_REPO` | `https://pkg.krfoss.org/debian` | 저장소 주소 |
 | `RPT_BINDIR` | `/usr/local/bin` | 실행 파일 심링크 위치 |
 | `RPT_ETCDIR` | `/etc` | 설정 디렉터리 심링크 위치 |
 
-볼륨이 없는 환경에서는 설치 루트가 `/opt/rokfoss` 로 잡힙니다.
+시놀로지 환경에서는 `/volumeN/@rokfoss` 를 우선 사용하고, 일반 Linux에서는
+기본적으로 `/opt/rpt` 와 `/var/lib/rpt`, `/var/cache/rpt` 를 사용합니다.
 
 ## 배치 구조
 
 ```
-/volume1/@rokfoss/
+/opt/rpt/
 ├── usr/bin/krfs-rport          실제 실행 파일
-├── etc/krfs-rport/config.conf  설정 파일
-├── var/lib/rpt/status.json     설치 목록 (rpt 전용)
-├── var/lib/rpt/lists/          저장소 목록 캐시
-└── var/cache/rpt/archives/     내려받은 deb
+└── etc/krfs-rport/config.conf  설정 파일
 
-/usr/local/bin/krfs-rport  ->  /volume1/@rokfoss/usr/bin/krfs-rport
-/etc/krfs-rport            ->  /volume1/@rokfoss/etc/krfs-rport
+/var/lib/rpt/status.json        설치 목록 (rpt 전용)
+/var/lib/rpt/lists/             저장소 목록 캐시
+/var/cache/rpt/archives/        내려받은 deb
+
+/usr/local/bin/krfs-rport  ->  /opt/rpt/usr/bin/krfs-rport
+/etc/krfs-rport            ->  /opt/rpt/etc/krfs-rport
 ```
 
 심링크를 걸 자리에 이미 다른 파일이 있으면 그대로 두고 경고만 합니다.
