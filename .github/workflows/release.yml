@@ -83,8 +83,9 @@ jobs:
 
   release:
     needs: package
-    # 수동 실행은 산출물만 만들고 릴리스는 건드리지 않는다.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # 태그를 밀었을 때, 그리고 수동 실행에서 버전을 넣었을 때 릴리스를 만든다.
+    # 버전 없이 수동 실행하면 산출물만 만들고 릴리스는 건드리지 않는다.
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -95,7 +96,17 @@ jobs:
       - name: 체크섬 및 GitHub 릴리스 생성
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
+          ARGS=(--repo "${GITHUB_REPOSITORY}" --generate-notes)
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            # 태그 위에서 도는 것이 아니므로 태그 이름을 만들고 대상 커밋을 지정한다.
+            TAG="v${INPUT_VERSION#v}"
+            ARGS+=(--target "${GITHUB_SHA}")
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "릴리스 태그: ${TAG}"
           cd release
           sha256sum * > checksums.txt
-          gh release create "${GITHUB_REF_NAME}" * --repo "${GITHUB_REPOSITORY}" --generate-notes
+          gh release create "${TAG}" * "${ARGS[@]}"
