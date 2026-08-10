@@ -33,7 +33,7 @@ const (
 	// UserAgent는 저장소 요청에 사용할 식별자입니다.
 	UserAgent = "rpt/" + Version + " (ROKFOSS PROJECT)"
 	// Version은 rpt 자체 버전입니다.
-	Version = "1.0.1"
+	Version = "1.0.2"
 )
 
 // Config는 한 번의 rpt 실행에 적용되는 설정입니다.
