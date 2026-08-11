@@ -474,6 +474,33 @@ const pageTemplate = `<!doctype html>
     .modal-count { font-size: 12.5px; color: var(--text-2); }
     .modal-actions { display: flex; gap: 8px; }
     .modal-foot .btn { height: 36px; padding: 0 16px; }
+    .modal-foot .btn[disabled] { opacity: 0.5; cursor: default; }
+
+    .modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px; }
+
+    .running {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 26px 2px;
+      font-size: 14px;
+      color: var(--text-2);
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      border: 2px solid var(--line);
+      border-top-color: var(--text);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 조건부로 붙는 조각을 감싸되 자리는 차지하지 않게 합니다. */
+    .live-slot { display: contents; }
 
     .checks { display: flex; flex-direction: column; gap: 10px; }
 
@@ -700,13 +727,15 @@ const pageTemplate = `<!doctype html>
       </section>
       {{end}}
 
-      {{if not .IndexAvailable}}
-      <div class="notice">
-        <span><strong>패키지 목록이 아직 없습니다.</strong> update 를 실행하면 저장소에서 목록을 받아옵니다. 목록이 있어야 설치와 검색을 할 수 있습니다.</span>
+      <div class="live-slot" id="live-notice">
+        {{if not .IndexAvailable}}
+        <div class="notice">
+          <span><strong>패키지 목록이 아직 없습니다.</strong> update 를 실행하면 저장소에서 목록을 받아옵니다. 목록이 있어야 설치와 검색을 할 수 있습니다.</span>
+        </div>
+        {{end}}
       </div>
-      {{end}}
 
-      <div class="stats">
+      <div class="stats" id="live-stats">
         <div class="stat">
           <span class="stat-num">{{.PackageCount}}</span>
           <span class="stat-label">저장소 패키지</span>
@@ -729,53 +758,53 @@ const pageTemplate = `<!doctype html>
         <div class="card-head">
           <h2 class="card-title">빠른 작업</h2>
           <div class="head-actions">
-            <form method="post" action="/command" class="inline-form">
+            <form method="post" action="/command" class="inline-form" data-quick>
               <input type="hidden" name="cmd" value="version">
               <button type="submit" class="btn-quiet">버전</button>
             </form>
-            <form method="post" action="/command" class="inline-form">
+            <form method="post" action="/command" class="inline-form" data-quick>
               <input type="hidden" name="cmd" value="help">
               <button type="submit" class="btn-quiet">도움말</button>
             </form>
           </div>
         </div>
         <div class="tiles">
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="update">
             <button type="submit" class="tile tile-primary">
               <span class="tile-cmd">update</span>
               <span class="tile-desc">저장소 목록을 새로 받습니다</span>
             </button>
           </form>
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="upgrade">
             <button type="submit" class="tile">
               <span class="tile-cmd">upgrade</span>
               <span class="tile-desc">설치된 패키지를 모두 최신으로</span>
             </button>
           </form>
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="autoremove">
             <button type="submit" class="tile">
               <span class="tile-cmd">autoremove</span>
               <span class="tile-desc">딸려왔다 필요 없어진 것 정리</span>
             </button>
           </form>
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="clean">
             <button type="submit" class="tile">
               <span class="tile-cmd">clean</span>
               <span class="tile-desc">받아 둔 deb 를 모두 지웁니다</span>
             </button>
           </form>
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="autoclean">
             <button type="submit" class="tile">
               <span class="tile-cmd">autoclean</span>
               <span class="tile-desc">저장소에서 사라진 deb 만 지웁니다</span>
             </button>
           </form>
-          <form method="post" action="/command" class="tile-form">
+          <form method="post" action="/command" class="tile-form" data-quick>
             <input type="hidden" name="cmd" value="relink">
             <button type="submit" class="tile">
               <span class="tile-cmd">relink</span>
@@ -790,7 +819,7 @@ const pageTemplate = `<!doctype html>
           <h2 class="card-title">패키지 작업</h2>
         </div>
         <div class="form-grid">
-          <form method="post" action="/command" class="form-block span-2">
+          <form method="post" action="/command" class="form-block span-2" data-quick>
             <input type="hidden" name="cmd" value="install">
             <div class="form-block-head">
               <span class="form-block-title">패키지 설치</span>
@@ -811,7 +840,7 @@ const pageTemplate = `<!doctype html>
             <button type="submit" class="btn btn-primary btn-block">설치</button>
           </form>
 
-          <form method="post" action="/command" class="form-block">
+          <form method="post" action="/command" class="form-block" data-quick>
             <input type="hidden" name="cmd" value="upgrade">
             <div class="form-block-head">
               <span class="form-block-title">골라서 업그레이드</span>
@@ -828,7 +857,7 @@ const pageTemplate = `<!doctype html>
             <button type="submit" class="btn btn-block">업그레이드</button>
           </form>
 
-          <form method="post" action="/command" class="form-block">
+          <form method="post" action="/command" class="form-block" data-quick>
             <input type="hidden" name="cmd" value="search">
             <div class="form-block-head">
               <span class="form-block-title">검색</span>
@@ -845,7 +874,7 @@ const pageTemplate = `<!doctype html>
             <button type="submit" class="btn btn-block">검색</button>
           </form>
 
-          <form method="post" action="/command" class="form-block">
+          <form method="post" action="/command" class="form-block" data-quick>
             <input type="hidden" name="cmd" value="show">
             <div class="form-block-head">
               <span class="form-block-title">상세 정보</span>
@@ -862,7 +891,7 @@ const pageTemplate = `<!doctype html>
             <button type="submit" class="btn btn-block">상세 보기</button>
           </form>
 
-          <form method="post" action="/command" class="form-block">
+          <form method="post" action="/command" class="form-block" data-quick>
             <input type="hidden" name="cmd" value="list">
             <div class="form-block-head">
               <span class="form-block-title">목록</span>
@@ -877,7 +906,7 @@ const pageTemplate = `<!doctype html>
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" id="live-installed">
         <div class="card-head">
           <h2 class="card-title">설치된 패키지</h2>
           <span class="card-note">{{.InstalledCount}}개</span>
@@ -910,12 +939,12 @@ const pageTemplate = `<!doctype html>
                 <td class="col-opt cell-time">{{.InstalledAtText}}</td>
                 <td class="col-actions">
                   <span class="row-actions">
-                    <form method="post" action="/command" class="inline-form" onsubmit="return confirm('{{.Name}} 를 지웁니다. 설정 파일은 남습니다. 계속할까요?')">
+                    <form method="post" action="/command" class="inline-form" data-quick onsubmit="return confirm('{{.Name}} 를 지웁니다. 설정 파일은 남습니다. 계속할까요?')">
                       <input type="hidden" name="cmd" value="remove">
                       <input type="hidden" name="names" value="{{.Name}}">
                       <button type="submit" class="btn-row btn-row-warn">제거</button>
                     </form>
-                    <form method="post" action="/command" class="inline-form" onsubmit="return confirm('{{.Name}} 를 설정 파일까지 지웁니다. 되돌릴 수 없습니다. 계속할까요?')">
+                    <form method="post" action="/command" class="inline-form" data-quick onsubmit="return confirm('{{.Name}} 를 설정 파일까지 지웁니다. 되돌릴 수 없습니다. 계속할까요?')">
                       <input type="hidden" name="cmd" value="purge">
                       <input type="hidden" name="names" value="{{.Name}}">
                       <button type="submit" class="btn-row btn-row-danger">완전 삭제</button>
@@ -954,6 +983,23 @@ const pageTemplate = `<!doctype html>
     </div>
   </main>
 
+  <div class="modal" id="modal-result" hidden>
+    <div class="modal-scrim" data-result-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-result-title">
+      <div class="modal-head">
+        <h3 class="modal-title" id="modal-result-title">실행 결과</h3>
+        <button type="button" class="modal-x" data-result-close aria-label="닫기">✕</button>
+      </div>
+      <div class="modal-body" data-result-body aria-live="polite"></div>
+      <div class="modal-foot">
+        <span class="modal-count" data-result-state></span>
+        <span class="modal-actions">
+          <button type="button" class="btn btn-primary" data-result-close>닫기</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
   <div class="modal" id="modal-install" data-multi="1" hidden>
     <div class="modal-scrim" data-modal-close></div>
     <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-install-title">
@@ -965,7 +1011,7 @@ const pageTemplate = `<!doctype html>
         <input type="text" class="input" data-modal-query placeholder="이름이나 설명으로 찾기" autocomplete="off" spellcheck="false">
         <p class="modal-hint">여러 개를 골라도 됩니다. 의존성은 함께 설치되므로 따로 고르지 않아도 됩니다.</p>
       </div>
-      <ul class="modal-list" data-modal-list role="listbox" aria-multiselectable="true">
+      <ul class="modal-list" id="install-list" data-modal-list role="listbox" aria-multiselectable="true">
         {{range $i, $p := .Available}}
         <li class="modal-item" id="install-pick-{{$i}}" role="option" aria-selected="false" data-value="{{$p.Name}}" data-search="{{$p.SearchKey}}">
           <span class="modal-check" aria-hidden="true"></span>
@@ -1000,7 +1046,7 @@ const pageTemplate = `<!doctype html>
         <input type="text" class="input" data-modal-query placeholder="이름이나 설명으로 찾기" autocomplete="off" spellcheck="false">
         <p class="modal-hint">아무것도 고르지 않고 확인하면 설치된 패키지를 모두 올립니다.</p>
       </div>
-      <ul class="modal-list" data-modal-list role="listbox" aria-multiselectable="true">
+      <ul class="modal-list" id="upgrade-list" data-modal-list role="listbox" aria-multiselectable="true">
         {{range $i, $p := .InstalledOptions}}
         <li class="modal-item" id="upgrade-pick-{{$i}}" role="option" aria-selected="false" data-value="{{$p.Name}}" data-search="{{$p.SearchKey}}">
           <span class="modal-check" aria-hidden="true"></span>
@@ -1035,7 +1081,7 @@ const pageTemplate = `<!doctype html>
         <input type="text" class="input" data-modal-query placeholder="찾을 말" autocomplete="off" spellcheck="false">
         <p class="modal-hint">적은 말을 그대로 검색어로 씁니다. 아래에서 고르면 그 이름이 들어갑니다.</p>
       </div>
-      <ul class="modal-list" data-modal-list role="listbox">
+      <ul class="modal-list" id="search-list" data-modal-list role="listbox">
         {{range $i, $p := .Available}}
         <li class="modal-item" id="search-pick-{{$i}}" role="option" aria-selected="false" data-value="{{$p.Name}}" data-search="{{$p.SearchKey}}">
           <span class="modal-item-main">
@@ -1068,7 +1114,7 @@ const pageTemplate = `<!doctype html>
         <input type="text" class="input" data-modal-query placeholder="이름이나 설명으로 찾기" autocomplete="off" spellcheck="false">
         <p class="modal-hint">여러 개를 고르면 차례로 보여 줍니다.</p>
       </div>
-      <ul class="modal-list" data-modal-list role="listbox" aria-multiselectable="true">
+      <ul class="modal-list" id="show-list" data-modal-list role="listbox" aria-multiselectable="true">
         {{range $i, $p := .Available}}
         <li class="modal-item" id="show-pick-{{$i}}" role="option" aria-selected="false" data-value="{{$p.Name}}" data-search="{{$p.SearchKey}}">
           <span class="modal-check" aria-hidden="true"></span>
@@ -1094,9 +1140,46 @@ const pageTemplate = `<!doctype html>
 
   <script>
   (function () {
+    var held = null;
+
+    // 화면에 보이는 것을 바꾸지 않는 명령입니다.
+    var READONLY = ["version", "help", "list", "search", "show"];
+
     var triggers = document.querySelectorAll("[data-modal-open]");
     for (var i = 0; i < triggers.length; i++) {
       wire(triggers[i]);
+    }
+
+    // 뒤 화면이 따라 스크롤되지 않게 막습니다.
+    //
+    // body 에만 걸면 듣지 않습니다. html 의 overflow 가 visible 일 때만
+    // body 설정이 화면 전체로 전달되는데, 이 문서는 html 에 이미
+    // overflow-x: hidden 이 걸려 있어 그 전달이 끊깁니다.
+    function lockScroll() {
+      var root = document.documentElement;
+      var bar = window.innerWidth - root.clientWidth;
+      held = {
+        root: root.style.overflow,
+        body: document.body.style.overflow,
+        pad: root.style.paddingRight
+      };
+      root.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+      // 스크롤 막대가 사라지면서 본문이 옆으로 튀는 것을 막습니다.
+      if (bar > 0) {
+        root.style.paddingRight = bar + "px";
+      }
+    }
+
+    function unlockScroll() {
+      if (!held) {
+        return;
+      }
+      var root = document.documentElement;
+      root.style.overflow = held.root;
+      document.body.style.overflow = held.body;
+      root.style.paddingRight = held.pad;
+      held = null;
     }
 
     function wire(input) {
@@ -1109,11 +1192,18 @@ const pageTemplate = `<!doctype html>
       var list = modal.querySelector("[data-modal-list]");
       var count = modal.querySelector("[data-modal-count]");
       var okButton = modal.querySelector("[data-modal-ok]");
-      var items = Array.prototype.slice.call(list.querySelectorAll(".modal-item"));
-      var empty = list.querySelector(".modal-empty");
+      var items = [];
+      var empty = null;
       var chosen = [];
       var active = -1;
-      var held = null;
+
+      // 목록은 명령을 실행한 뒤 통째로 갈릴 수 있으므로, 붙잡아 두지 않고
+      // 열 때마다 다시 읽습니다.
+      function readItems() {
+        items = Array.prototype.slice.call(list.querySelectorAll(".modal-item"));
+        empty = list.querySelector(".modal-empty");
+      }
+      readItems();
 
       // 스크립트가 살아 있을 때만 직접 입력을 막고 모달로 넘깁니다.
       // 스크립트가 없으면 예전처럼 그냥 입력칸으로 쓸 수 있습니다.
@@ -1229,6 +1319,7 @@ const pageTemplate = `<!doctype html>
         if (!modal.hidden) {
           return;
         }
+        readItems();
         // 목록에 없는 이름은 지울 방법이 없으므로 아예 들이지 않습니다.
         chosen = [];
         var had = tokens(input.value);
@@ -1254,38 +1345,6 @@ const pageTemplate = `<!doctype html>
         modal.hidden = true;
         unlockScroll();
         input.focus();
-      }
-
-      // 뒤 화면이 따라 스크롤되지 않게 막습니다.
-      //
-      // body 에만 걸면 듣지 않습니다. html 의 overflow 가 visible 일 때만
-      // body 설정이 화면 전체로 전달되는데, 이 문서는 html 에 이미
-      // overflow-x: hidden 이 걸려 있어 그 전달이 끊깁니다.
-      function lockScroll() {
-        var root = document.documentElement;
-        var bar = window.innerWidth - root.clientWidth;
-        held = {
-          root: root.style.overflow,
-          body: document.body.style.overflow,
-          pad: root.style.paddingRight
-        };
-        root.style.overflow = "hidden";
-        document.body.style.overflow = "hidden";
-        // 스크롤 막대가 사라지면서 본문이 옆으로 튀는 것을 막습니다.
-        if (bar > 0) {
-          root.style.paddingRight = bar + "px";
-        }
-      }
-
-      function unlockScroll() {
-        if (!held) {
-          return;
-        }
-        var root = document.documentElement;
-        root.style.overflow = held.root;
-        document.body.style.overflow = held.body;
-        root.style.paddingRight = held.pad;
-        held = null;
       }
 
       input.addEventListener("click", open);
@@ -1369,6 +1428,180 @@ const pageTemplate = `<!doctype html>
           first.focus();
         }
       });
+    }
+
+    // 빠른 작업은 화면을 새로 열지 않고 결과만 받아 모달에 띄웁니다.
+    // 스크립트가 없으면 폼이 그대로 제출되어 예전처럼 동작합니다.
+    var resultModal = document.getElementById("modal-result");
+    if (resultModal) {
+      wireQuick(resultModal);
+    }
+
+    function wireQuick(box) {
+      var title = box.querySelector(".modal-title");
+      var body = box.querySelector("[data-result-body]");
+      var state = box.querySelector("[data-result-state]");
+      var closers = box.querySelectorAll("[data-result-close]");
+      var buttons = box.querySelectorAll("button");
+      var opener = null;
+      var busy = false;
+      var dirty = false;
+
+      // 설치된 패키지 표는 명령을 실행한 뒤 통째로 갈리므로, 폼마다 따로
+      // 걸지 않고 문서에서 한 번만 받습니다. 갈아 끼운 폼도 그대로 됩니다.
+      document.addEventListener("submit", function (e) {
+        var form = e.target;
+        if (!form || !form.hasAttribute || !form.hasAttribute("data-quick")) {
+          return;
+        }
+        // 지우기 전에 묻는 창에서 취소했으면 여기서 멈춰야 합니다.
+        // 안 그러면 취소해 놓고도 명령이 나갑니다.
+        if (e.defaultPrevented) {
+          return;
+        }
+        e.preventDefault();
+        if (busy) {
+          return;
+        }
+        run(form);
+      });
+
+      function run(form) {
+        var body_ = new URLSearchParams(new FormData(form));
+        var cmd = body_.get("cmd") || "";
+        body_.set("partial", "1");
+        opener = form.querySelector("button");
+        start(cmd);
+        fetch(form.action, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+          body: body_.toString()
+        }).then(function (res) {
+          if (!res.ok) {
+            throw new Error("서버가 " + res.status + " 로 답했습니다");
+          }
+          return res.json();
+        }).then(function (out) {
+          finish(out);
+        }).catch(function (err) {
+          finish({ command: cmd, ok: false, lines: [], error: "결과를 받지 못했습니다: " + err.message });
+        });
+      }
+
+      function start(cmd) {
+        busy = true;
+        dirty = false;
+        title.textContent = cmd + " 실행 중";
+        state.textContent = "";
+        body.textContent = "";
+        var wrap = document.createElement("div");
+        wrap.className = "running";
+        var dot = document.createElement("span");
+        dot.className = "spinner";
+        var say = document.createElement("span");
+        say.textContent = "명령을 실행하고 있습니다. 잠시 기다려 주십시오.";
+        wrap.appendChild(dot);
+        wrap.appendChild(say);
+        body.appendChild(wrap);
+        setBusy(true);
+        if (box.hidden) {
+          box.hidden = false;
+          lockScroll();
+        }
+      }
+
+      function finish(out) {
+        busy = false;
+        setBusy(false);
+        title.textContent = out.command + " 결과";
+        state.textContent = out.ok ? "완료했습니다" : "실패했습니다";
+        body.textContent = "";
+
+        if (out.error) {
+          var bad = document.createElement("p");
+          bad.className = "result-error";
+          bad.textContent = out.error;
+          body.appendChild(bad);
+        }
+        if (out.lines && out.lines.length) {
+          var pre = document.createElement("pre");
+          pre.className = "result-pre";
+          pre.textContent = out.lines.join("\n");
+          body.appendChild(pre);
+        }
+        if (!out.error && (!out.lines || !out.lines.length)) {
+          var none = document.createElement("p");
+          none.className = "empty";
+          none.textContent = "알려 줄 내용이 없습니다.";
+          body.appendChild(none);
+        }
+
+        // 보기만 하는 명령은 화면을 바꾸지 않으므로 다시 읽지 않습니다.
+        dirty = out.ok && READONLY.indexOf(out.command) < 0;
+        closers[closers.length - 1].focus();
+      }
+
+      function setBusy(on) {
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].disabled = on;
+        }
+      }
+
+      function shut() {
+        if (busy || box.hidden) {
+          return;
+        }
+        box.hidden = true;
+        unlockScroll();
+        if (opener) {
+          opener.focus();
+        }
+        if (dirty) {
+          dirty = false;
+          refreshLive();
+        }
+      }
+
+      for (var j = 0; j < closers.length; j++) {
+        closers[j].addEventListener("click", shut);
+      }
+
+      box.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          shut();
+        }
+      });
+    }
+
+    // 명령이 바꿔 놓은 부분만 조용히 다시 읽어 옵니다.
+    // 화면을 새로 열지 않으므로 보던 자리가 그대로 남습니다.
+    function refreshLive() {
+      return fetch(window.location.pathname, { headers: { "X-Rpt-Refresh": "1" } })
+        .then(function (res) { return res.text(); })
+        .then(function (text) {
+          var fresh = new DOMParser().parseFromString(text, "text/html");
+          var slots = ["live-notice", "live-stats", "live-installed"];
+          for (var i = 0; i < slots.length; i++) {
+            swap(fresh, slots[i]);
+          }
+          var lists = document.querySelectorAll("[data-modal-list]");
+          for (var j = 0; j < lists.length; j++) {
+            swap(fresh, lists[j].id);
+          }
+        })
+        .catch(function () {});
+    }
+
+    function swap(fresh, id) {
+      if (!id) {
+        return;
+      }
+      var from = fresh.getElementById(id);
+      var to = document.getElementById(id);
+      if (from && to) {
+        to.innerHTML = from.innerHTML;
+      }
     }
   })();
   </script>

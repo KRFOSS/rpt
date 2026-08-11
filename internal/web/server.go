@@ -143,10 +143,10 @@ type installedRow struct {
 }
 
 type commandResult struct {
-	Command string
-	OK      bool
-	Lines   []string
-	Error   string
+	Command string   `json:"command"`
+	OK      bool     `json:"ok"`
+	Lines   []string `json:"lines"`
+	Error   string   `json:"error"`
 }
 
 type statusResponse struct {
@@ -184,6 +184,15 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := s.executeCommand(r)
+
+	// partial=1 은 화면을 통째로 다시 그리지 말고 결과만 달라는 뜻입니다.
+	// 브라우저가 이것으로 결과를 받아 모달에 띄우므로, 명령을 실행해도
+	// 페이지가 새로 열리며 맨 위로 튀지 않습니다.
+	if r.FormValue("partial") == "1" {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(result)
+		return
+	}
 	s.render(w, result)
 }
 
